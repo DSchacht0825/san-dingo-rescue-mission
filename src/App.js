@@ -455,7 +455,8 @@ function App() {
       alert("Post shared successfully!");
     } catch (error) {
       console.error("Error saving post:", error);
-      alert("Error saving post. Please try again.");
+      console.error("Error details:", error.message);
+      alert(`Error saving post: ${error.message}. Please check the console for details.`);
     } finally {
       setSaving(false);
     }
