@@ -89,6 +89,58 @@ function App() {
 
   const todaysVerse = getTodaysVerse();
 
+  // Load journal entries from Firestore
+  const loadJournalEntries = async () => {
+    try {
+      console.log("Loading journal entries for user:", currentUser.email);
+      
+      if (!currentUser.email) {
+        console.error("No user email found, cannot load entries");
+        return;
+      }
+
+      // First try to get all entries to debug what's in the database
+      const allEntriesQuery = query(collection(db, "journalEntries"));
+      const allSnapshot = await getDocs(allEntriesQuery);
+      console.log(`Total entries in database: ${allSnapshot.size}`);
+      
+      // Log all entries to see what emails they have
+      allSnapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log("Found entry with email:", data.userEmail, "current user:", currentUser.email);
+      });
+
+      // Then try to get user-specific entries
+      const q = query(
+        collection(db, "journalEntries"), 
+        where("userEmail", "==", currentUser.email)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      console.log(`Found ${querySnapshot.size} entries for user ${currentUser.email}`);
+      
+      const entries = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log("Entry data:", data);
+        entries.push({ id: doc.id, ...data });
+      });
+      
+      // Sort entries by date (most recent first)
+      entries.sort((a, b) => {
+        const dateA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt)) : new Date();
+        const dateB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt)) : new Date();
+        return dateB - dateA;
+      });
+      
+      setJournalEntries(entries);
+      console.log(`Successfully loaded ${entries.length} journal entries:`, entries);
+    } catch (error) {
+      console.error("Error loading journal entries:", error);
+      console.error("Error details:", error.message);
+    }
+  };
+
   // Save journal entry to Firestore
   const saveJournalEntry = async () => {
     if (!journalText.trim()) {
@@ -120,25 +172,6 @@ function App() {
     }
   };
 
-  // Load journal entries from Firestore
-  const loadJournalEntries = async () => {
-    try {
-      const q = query(
-        collection(db, "journalEntries"), 
-        where("userEmail", "==", currentUser.email),
-        orderBy("createdAt", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const entries = [];
-      querySnapshot.forEach((doc) => {
-        entries.push({ id: doc.id, ...doc.data() });
-      });
-      setJournalEntries(entries);
-      console.log(`Loaded ${entries.length} journal entries`);
-    } catch (error) {
-      console.error("Error loading journal entries:", error);
-    }
-  };
 
   // Save community post to Firestore
   const savePost = async () => {
@@ -170,25 +203,6 @@ function App() {
     }
   };
 
-  // Load journal entries from Firestore
-  const loadJournalEntries = async () => {
-    try {
-      const q = query(
-        collection(db, "journalEntries"), 
-        where("userEmail", "==", currentUser.email),
-        orderBy("createdAt", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const entries = [];
-      querySnapshot.forEach((doc) => {
-        entries.push({ id: doc.id, ...doc.data() });
-      });
-      setJournalEntries(entries);
-      console.log(`Loaded ${entries.length} journal entries`);
-    } catch (error) {
-      console.error("Error loading journal entries:", error);
-    }
-  };
   
   const [currentUser, setCurrentUser] = useState({
     name: "You",
@@ -510,25 +524,6 @@ function App() {
     }
   };
 
-  // Load journal entries from Firestore
-  const loadJournalEntries = async () => {
-    try {
-      const q = query(
-        collection(db, "journalEntries"), 
-        where("userEmail", "==", currentUser.email),
-        orderBy("createdAt", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const entries = [];
-      querySnapshot.forEach((doc) => {
-        entries.push({ id: doc.id, ...doc.data() });
-      });
-      setJournalEntries(entries);
-      console.log(`Loaded ${entries.length} journal entries`);
-    } catch (error) {
-      console.error("Error loading journal entries:", error);
-    }
-  };
 
   const handleLikeMessage = (messageId) => {
     setMessages(messages.map(msg => {
@@ -1821,9 +1816,28 @@ function App() {
                   maxHeight: '400px',
                   overflowY: 'auto'
                 }}>
-                  <h3 style={{ color: 'white', marginBottom: '16px', margin: '0 0 16px 0' }}>
-                    Your Past Journal Entries ({journalEntries.length})
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <h3 style={{ color: 'white', margin: 0 }}>
+                      Your Past Journal Entries ({journalEntries.length})
+                    </h3>
+                    <button
+                      onClick={() => {
+                        console.log("Manual refresh clicked");
+                        loadJournalEntries();
+                      }}
+                      style={{
+                        background: '#F5A01D',
+                        color: 'white',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Refresh
+                    </button>
+                  </div>
                   
                   {journalEntries.length === 0 ? (
                     <p style={{ color: 'rgba(255,255,255,0.7)', fontStyle: 'italic', margin: 0 }}>
