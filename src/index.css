@@ -1,0 +1,44 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen";
+}
+
+/* San Diego Rescue Mission Brand Colors */
+:root {
+  --sdrm-blue: #004990;
+  --sdrm-orange: #F5A01D;
+  --sdrm-white: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Basic utility classes */
+.bg-primary {
+  background-color: var(--sdrm-blue);
+}
+
+.bg-secondary {
+  background-color: var(--sdrm-orange);
+}
+
+.text-white {
+  color: var(--sdrm-white);
+}
+
+.text-primary {
+  color: var(--sdrm-blue);
+}
+
+.text-secondary {
+  color: var(--sdrm-orange);
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, var(--sdrm-blue) 0%, var(--sdrm-orange) 100%);
+}
+
+.gradient-header {
+  background: linear-gradient(90deg, var(--sdrm-blue) 0%, var(--sdrm-orange) 100%);
+}
