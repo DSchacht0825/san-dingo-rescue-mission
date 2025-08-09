@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Heart, User, Mail, Lock, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Camera, Shield, Megaphone, ArrowLeft, Search, Phone, Video, MoreHorizontal } from "lucide-react";
 import { db } from "./firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs } from "firebase/firestore";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -20,6 +20,7 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [journalEntries, setJournalEntries] = useState([]);
   
   // Admin emails
   const adminEmails = [
@@ -111,9 +112,30 @@ function App() {
       setShowJournaling(false);
     } catch (error) {
       console.error("Error saving journal entry:", error);
-      alert("Error saving journal entry. Please try again.");
+      console.error("Error details:", error.message);
+      alert(`Error saving journal entry: ${error.message}. Please check the console for details.`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Load journal entries from Firestore
+  const loadJournalEntries = async () => {
+    try {
+      const q = query(
+        collection(db, "journalEntries"), 
+        where("userEmail", "==", currentUser.email),
+        orderBy("createdAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const entries = [];
+      querySnapshot.forEach((doc) => {
+        entries.push({ id: doc.id, ...doc.data() });
+      });
+      setJournalEntries(entries);
+      console.log(`Loaded ${entries.length} journal entries`);
+    } catch (error) {
+      console.error("Error loading journal entries:", error);
     }
   };
 
@@ -144,6 +166,26 @@ function App() {
       alert("Error saving post. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Load journal entries from Firestore
+  const loadJournalEntries = async () => {
+    try {
+      const q = query(
+        collection(db, "journalEntries"), 
+        where("userEmail", "==", currentUser.email),
+        orderBy("createdAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const entries = [];
+      querySnapshot.forEach((doc) => {
+        entries.push({ id: doc.id, ...doc.data() });
+      });
+      setJournalEntries(entries);
+      console.log(`Loaded ${entries.length} journal entries`);
+    } catch (error) {
+      console.error("Error loading journal entries:", error);
     }
   };
   
@@ -382,6 +424,11 @@ function App() {
       alert("Welcome to San Diego Rescue Mission Community! Enjoy connecting with your support community.");
     }
     
+    // Load user's journal entries after login
+    setTimeout(() => {
+      loadJournalEntries();
+    }, 1000);
+    
     setCurrentView("chat");
   };
 
@@ -459,6 +506,26 @@ function App() {
       alert(`Error saving post: ${error.message}. Please check the console for details.`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Load journal entries from Firestore
+  const loadJournalEntries = async () => {
+    try {
+      const q = query(
+        collection(db, "journalEntries"), 
+        where("userEmail", "==", currentUser.email),
+        orderBy("createdAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const entries = [];
+      querySnapshot.forEach((doc) => {
+        entries.push({ id: doc.id, ...doc.data() });
+      });
+      setJournalEntries(entries);
+      console.log(`Loaded ${entries.length} journal entries`);
+    } catch (error) {
+      console.error("Error loading journal entries:", error);
     }
   };
 
