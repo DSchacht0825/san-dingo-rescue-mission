@@ -23,6 +23,9 @@ function App() {
   const [journalEntries, setJournalEntries] = useState([]);
   const [showPastEntries, setShowPastEntries] = useState(false);
   
+  // Debug state initialization
+  console.log("App component rendered, showPastEntries state:", showPastEntries);
+  
   // Admin emails
   const adminEmails = [
     "schacht.dan@gmail.com",
@@ -1789,7 +1792,14 @@ function App() {
                   {saving ? 'Saving...' : 'Save Entry'}
                 </button>
                 <button 
-                  onClick={() => setShowPastEntries(!showPastEntries)}
+                  onClick={() => {
+                    console.log("View Past Entries clicked, current state:", showPastEntries);
+                    setShowPastEntries(!showPastEntries);
+                    if (!showPastEntries) {
+                      console.log("Loading journal entries...");
+                      loadJournalEntries();
+                    }
+                  }}
                   style={{
                     background: 'rgba(255,255,255,0.2)',
                     color: 'white',
