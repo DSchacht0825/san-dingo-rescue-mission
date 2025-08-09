@@ -21,6 +21,7 @@ function App() {
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [journalEntries, setJournalEntries] = useState([]);
+  const [showPastEntries, setShowPastEntries] = useState(false);
   
   // Admin emails
   const adminEmails = [
@@ -1179,7 +1180,12 @@ function App() {
 
               {/* Journal Button */}
               <button
-                onClick={() => setShowJournaling(!showJournaling)}
+                onClick={() => {
+                  setShowJournaling(!showJournaling);
+                  if (!showJournaling) {
+                    loadJournalEntries(); // Refresh entries when opening
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1787,21 +1793,87 @@ function App() {
                 >
                   {saving ? 'Saving...' : 'Save Entry'}
                 </button>
-                <button style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  flex: '1',
-                  minWidth: '120px'
-                }}>
-                  View Past Entries
+                <button 
+                  onClick={() => setShowPastEntries(!showPastEntries)}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    padding: '12px 24px',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    flex: '1',
+                    minWidth: '120px'
+                  }}>
+                  {showPastEntries ? 'Hide Past Entries' : 'View Past Entries'}
                 </button>
               </div>
+              
+              {/* Past Entries Section */}
+              {showPastEntries && (
+                <div style={{
+                  marginTop: '20px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  maxHeight: '400px',
+                  overflowY: 'auto'
+                }}>
+                  <h3 style={{ color: 'white', marginBottom: '16px', margin: '0 0 16px 0' }}>
+                    Your Past Journal Entries ({journalEntries.length})
+                  </h3>
+                  
+                  {journalEntries.length === 0 ? (
+                    <p style={{ color: 'rgba(255,255,255,0.7)', fontStyle: 'italic', margin: 0 }}>
+                      No journal entries found. Start writing to see your entries here!
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {journalEntries.map((entry, index) => (
+                        <div key={entry.id || index} style={{
+                          background: 'rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ 
+                              fontSize: '12px', 
+                              color: 'rgba(255,255,255,0.6)',
+                              textTransform: 'capitalize'
+                            }}>
+                              {entry.mode || 'free'} journal • {entry.createdAt ? new Date(entry.createdAt.toDate?.() || entry.createdAt).toLocaleDateString() : 'Recent'}
+                            </span>
+                          </div>
+                          
+                          {entry.prompt && (
+                            <p style={{ 
+                              fontSize: '14px', 
+                              color: 'rgba(255,255,255,0.8)', 
+                              fontStyle: 'italic',
+                              marginBottom: '8px',
+                              margin: '0 0 8px 0'
+                            }}>
+                              Prompt: "{entry.prompt}"
+                            </p>
+                          )}
+                          
+                          <p style={{ 
+                            color: 'white', 
+                            margin: 0,
+                            fontSize: '15px',
+                            lineHeight: '1.4'
+                          }}>
+                            {entry.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
