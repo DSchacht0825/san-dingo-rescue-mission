@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Heart, User, Mail, Lock, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Camera, Shield, Megaphone, ArrowLeft, Search, Phone, Video, MoreHorizontal } from "lucide-react";
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs } from "firebase/firestore";
@@ -22,6 +22,13 @@ function App() {
   const [replyText, setReplyText] = useState("");
   const [journalEntries, setJournalEntries] = useState([]);
   const [showPastEntries, setShowPastEntries] = useState(false);
+  
+  // Statistics state
+  const [statistics, setStatistics] = useState({
+    supportRequests: 0,
+    victoryReports: 0,
+    activeMembers: 0
+  });
   
   // Debug state initialization
   console.log("App component rendered, showPastEntries state:", showPastEntries);
@@ -91,6 +98,13 @@ function App() {
   };
 
   const todaysVerse = getTodaysVerse();
+
+  // Load statistics when user logs in
+  useEffect(() => {
+    if (currentView === "chat" && currentUser.email) {
+      loadStatistics();
+    }
+  }, [currentView, currentUser.email]);
 
   // Load journal entries from Firestore
   const loadJournalEntries = async () => {
@@ -203,6 +217,53 @@ function App() {
       alert("Error saving post. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Load statistics from Firestore
+  const loadStatistics = async () => {
+    try {
+      // Count support requests (prayer_request type posts)
+      const supportRequestsQuery = query(
+        collection(db, "posts"),
+        where("type", "==", "prayer_request")
+      );
+      const supportRequestsSnapshot = await getDocs(supportRequestsQuery);
+      const supportRequestsCount = supportRequestsSnapshot.size;
+
+      // Count victory reports (praise_report type posts)
+      const victoryReportsQuery = query(
+        collection(db, "posts"),
+        where("type", "==", "praise_report")
+      );
+      const victoryReportsSnapshot = await getDocs(victoryReportsQuery);
+      const victoryReportsCount = victoryReportsSnapshot.size;
+
+      // Count active members (unique users who have posted)
+      const allPostsQuery = query(collection(db, "posts"));
+      const allPostsSnapshot = await getDocs(allPostsQuery);
+      const uniqueUsers = new Set();
+      allPostsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.userEmail) {
+          uniqueUsers.add(data.userEmail);
+        }
+      });
+      const activeMembersCount = uniqueUsers.size;
+
+      setStatistics({
+        supportRequests: supportRequestsCount,
+        victoryReports: victoryReportsCount,
+        activeMembers: activeMembersCount
+      });
+
+      console.log("Statistics loaded:", {
+        supportRequests: supportRequestsCount,
+        victoryReports: victoryReportsCount,
+        activeMembers: activeMembersCount
+      });
+    } catch (error) {
+      console.error("Error loading statistics:", error);
     }
   };
 
@@ -518,6 +579,8 @@ function App() {
       setMessages([...messages, message]);
       setNewMessage("");
       alert("Post shared successfully!");
+      // Reload statistics after new post
+      loadStatistics();
     } catch (error) {
       console.error("Error saving post:", error);
       console.error("Error details:", error.message);
@@ -1562,7 +1625,7 @@ function App() {
               textAlign: 'center'
             }}>
               <Heart size={24} color="#F5A01D" style={{ marginBottom: '8px' }} />
-              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>{messages.filter(m => m.type === "support_request").length}</p>
+              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>{statistics.supportRequests}</p>
               <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', margin: 0 }}>Support Requests</p>
             </div>
             
@@ -1575,7 +1638,7 @@ function App() {
               textAlign: 'center'
             }}>
               <Star size={24} color="#F59E0B" style={{ marginBottom: '8px' }} />
-              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>8</p>
+              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>{statistics.victoryReports}</p>
               <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', margin: 0 }}>Victory Reports</p>
             </div>
             
@@ -1588,7 +1651,7 @@ function App() {
               textAlign: 'center'
             }}>
               <Users size={24} color="#F5A01D" style={{ marginBottom: '8px' }} />
-              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>6</p>
+              <p style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', margin: 0 }}>{statistics.activeMembers}</p>
               <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', margin: 0 }}>Active Members</p>
             </div>
           </div>
