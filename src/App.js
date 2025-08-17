@@ -99,13 +99,6 @@ function App() {
 
   const todaysVerse = getTodaysVerse();
 
-  // Load statistics when user logs in
-  useEffect(() => {
-    if (currentView === "chat" && currentUser.email) {
-      loadStatistics();
-    }
-  }, [currentView, currentUser.email]);
-
   // Load journal entries from Firestore
   const loadJournalEntries = async () => {
     try {
@@ -282,6 +275,13 @@ function App() {
     password: "",
     confirmPassword: ""
   });
+
+  // Load statistics when user logs in
+  useEffect(() => {
+    if (currentView === "chat" && currentUser.email) {
+      loadStatistics();
+    }
+  }, [currentView, currentUser.email]);
 
   // Community members with more detailed info
   const [communityMembers] = useState([
