@@ -1,7 +1,21 @@
+/*
+ * San Diego Rescue Mission Web Application
+ * Copyright © 2025 Daniel Schacht and San Diego Rescue Mission
+ * All Rights Reserved
+ * 
+ * This file contains the main React application component for the
+ * San Diego Rescue Mission community platform.
+ * 
+ * Author: Daniel Schacht
+ * Created: 2025
+ * License: See LICENSE.md for usage terms
+ */
+
 import React, { useState, useEffect } from "react";
-import { Heart, User, Mail, Lock, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Camera, Shield, Megaphone, ArrowLeft, Search, Phone, Video, MoreHorizontal } from "lucide-react";
+import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, Camera } from "lucide-react";
 import { db } from "./firebase";
-import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
+import AdminDashboard from "./AdminDashboard";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -9,14 +23,11 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showMessenger, setShowMessenger] = useState(false);
-  const [currentChat, setCurrentChat] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showJournaling, setShowJournaling] = useState(false);
   const [currentJournalPrompt, setCurrentJournalPrompt] = useState(0);
   const [journalMode, setJournalMode] = useState("free"); // "free" or "guided"
   const [journalText, setJournalText] = useState("");
-  const [newPostText, setNewPostText] = useState("");
   const [saving, setSaving] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
@@ -183,33 +194,56 @@ function App() {
   };
 
 
-  // Save community post to Firestore
-  const savePost = async () => {
-    if (!newPostText.trim()) {
-      alert("Please write something before posting.");
-      return;
-    }
 
-    setSaving(true);
+  // Load posts from Firestore
+  const loadPosts = async () => {
     try {
-      await addDoc(collection(db, "posts"), {
-        text: newPostText,
-        userEmail: currentUser.email,
-        userName: currentUser.name,
-        timestamp: serverTimestamp(),
-        createdAt: new Date(),
-        type: "community_post",
-        loved: false,
-        replies: []
+      console.log("Loading posts from Firestore...");
+      
+      const q = query(
+        collection(db, "posts"),
+        orderBy("createdAt", "asc")
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const posts = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const post = {
+          id: doc.id,
+          user: data.userName || "Unknown User",
+          message: data.text || "",
+          time: data.createdAt ? new Date(data.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Unknown",
+          type: data.type || "post",
+          profilePicture: null,
+          likes: data.likes || 0,
+          loved: data.loved || false,
+          replies: data.replies || [],
+          isAdmin: data.isAdmin || false
+        };
+        posts.push(post);
       });
       
-      alert("Post shared successfully!");
-      setNewPostText("");
+      console.log(`Loaded ${posts.length} posts from Firestore:`, posts);
+      setMessages(posts);
     } catch (error) {
-      console.error("Error saving post:", error);
-      alert("Error saving post. Please try again.");
-    } finally {
-      setSaving(false);
+      console.error("Error loading posts:", error);
+      // Set some default posts if there's an error loading
+      setMessages([
+        {
+          id: "default-1",
+          user: "Admin",
+          message: "🌟 Welcome to San Diego Rescue Mission Community! This is a safe space for support, encouragement, and fellowship. Please be kind and supportive to one another.",
+          time: "Today",
+          type: "admin_announcement",
+          profilePicture: null,
+          likes: 0,
+          loved: false,
+          replies: [],
+          isAdmin: true
+        }
+      ]);
     }
   };
 
@@ -269,6 +303,58 @@ function App() {
     bio: ""
   });
 
+  // Image resizing function
+  const resizeImage = (file, maxWidth = 150, maxHeight = 150, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Calculate new dimensions
+        let { width, height } = img;
+        
+        if (width > height) {
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = (width * maxHeight) / height;
+            height = maxHeight;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw and compress
+        ctx.drawImage(img, 0, 0, width, height);
+        const resizedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(resizedDataUrl);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // Handle profile picture upload
+  const handleProfilePictureUpload = async (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      try {
+        const resizedImage = await resizeImage(file);
+        setCurrentUser({ ...currentUser, profilePicture: resizedImage });
+      } catch (error) {
+        console.error('Error resizing image:', error);
+        alert('Error processing image. Please try again.');
+      }
+    } else {
+      alert('Please select a valid image file.');
+    }
+  };
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -276,213 +362,21 @@ function App() {
     confirmPassword: ""
   });
 
-  // Load statistics when user logs in
+  // Load posts and statistics when user logs in
   useEffect(() => {
     if (currentView === "chat" && currentUser.email) {
+      loadPosts();
       loadStatistics();
     }
   }, [currentView, currentUser.email]);
 
-  // Community members with more detailed info
-  const [communityMembers] = useState([
-    { 
-      id: 1, 
-      name: "Sarah M.", 
-      email: "sarah@example.com", 
-      online: true, 
-      lastSeen: "Active now",
-      avatar: "bg-gradient-to-r from-pink-500 to-rose-500"
-    },
-    { 
-      id: 2, 
-      name: "David K.", 
-      email: "david@example.com", 
-      online: false, 
-      lastSeen: "2 hours ago",
-      avatar: "bg-gradient-to-r from-blue-500 to-cyan-500"
-    },
-    { 
-      id: 3, 
-      name: "Maria L.", 
-      email: "maria@example.com", 
-      online: true, 
-      lastSeen: "Active now",
-      avatar: "bg-gradient-to-r from-purple-500 to-violet-500"
-    },
-    { 
-      id: 4, 
-      name: "Pastor John", 
-      email: "pastor@example.com", 
-      online: true, 
-      lastSeen: "Active now",
-      avatar: "bg-gradient-to-r from-amber-500 to-orange-500"
-    },
-    { 
-      id: 5, 
-      name: "Rachel T.", 
-      email: "rachel@example.com", 
-      online: false, 
-      lastSeen: "Yesterday",
-      avatar: "bg-gradient-to-r from-emerald-500 to-teal-500"
-    },
-    { 
-      id: 6, 
-      name: "Michael C.", 
-      email: "michael@example.com", 
-      online: true, 
-      lastSeen: "Active now",
-      avatar: "bg-gradient-to-r from-indigo-500 to-purple-500"
-    }
-  ]);
 
-  // Chat conversations with more realistic data
-  const [chatConversations, setChatConversations] = useState({
-    1: {
-      messages: [
-        { 
-          id: 1, 
-          sender: "Sarah M.", 
-          message: "Hi there! 😊", 
-          time: "10:30 AM", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 3600000) // 1 hour ago
-        },
-        { 
-          id: 2, 
-          sender: "You", 
-          message: "Hey Sarah! How are you doing?", 
-          time: "10:32 AM", 
-          isMe: true,
-          timestamp: new Date(Date.now() - 3540000)
-        },
-        { 
-          id: 3, 
-          sender: "Sarah M.", 
-          message: "I'm doing great! Thanks for your prayers yesterday 🙏 The job interview went really well!", 
-          time: "10:35 AM", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 3360000)
-        },
-        { 
-          id: 4, 
-          sender: "You", 
-          message: "That's amazing news! I'm so happy for you. God is good! ✨", 
-          time: "10:37 AM", 
-          isMe: true,
-          timestamp: new Date(Date.now() - 3240000)
-        },
-        { 
-          id: 5, 
-          sender: "Sarah M.", 
-          message: "Yes, He really is! I felt such peace during the whole process. Thank you for being such a great prayer partner 💕", 
-          time: "10:40 AM", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 3000000)
-        }
-      ],
-      lastMessage: "Yes, He really is! I felt such peace during the whole process. Thank you for being such a great prayer partner 💕",
-      lastMessageTime: "10:40 AM",
-      unread: 2
-    },
-    4: {
-      messages: [
-        { 
-          id: 1, 
-          sender: "Pastor John", 
-          message: "Good morning! Hope you're having a blessed day 🌅", 
-          time: "8:15 AM", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 7200000)
-        },
-        { 
-          id: 2, 
-          sender: "You", 
-          message: "Good morning Pastor! Yes, feeling very grateful today. How are the community outreach preparations going?", 
-          time: "8:20 AM", 
-          isMe: true,
-          timestamp: new Date(Date.now() - 6900000)
-        },
-        { 
-          id: 3, 
-          sender: "Pastor John", 
-          message: "They're going wonderfully! The community is so excited about our upcoming meal service. Your help with organizing has been such a blessing 🙏", 
-          time: "8:25 AM", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 6600000)
-        }
-      ],
-      lastMessage: "They're going wonderfully! The community is so excited about our upcoming meal service.",
-      lastMessageTime: "8:25 AM",
-      unread: 0
-    },
-    3: {
-      messages: [
-        { 
-          id: 1, 
-          sender: "Maria L.", 
-          message: "Hey! Did you see the community support request from David? 💙", 
-          time: "Yesterday", 
-          isMe: false,
-          timestamp: new Date(Date.now() - 86400000)
-        }
-      ],
-      lastMessage: "Hey! Did you see the community support request from David? 💙",
-      lastMessageTime: "Yesterday",
-      unread: 1
-    }
-  });
   
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      user: "Sarah M.",
-      message: "Good morning everyone! Starting my day with gratitude 🙏",
-      time: "8:30 AM",
-      type: "message",
-      profilePicture: null,
-      likes: 3,
-      loved: false,
-      replies: [],
-      isAdmin: false
-    },
-    {
-      id: 2,
-      user: "David K.",
-      message: "Please pray for my job interview today at 2 PM. I've been preparing for weeks and feeling nervous but trusting in God's plan.",
-      time: "9:15 AM",
-      type: "support_request",
-      profilePicture: null,
-      likes: 5,
-      loved: false,
-      replies: [
-        {
-          id: 1,
-          user: "Maria L.",
-          message: "Praying for you! You've got this! 💪",
-          time: "9:18 AM",
-          profilePicture: null
-        }
-      ],
-      isAdmin: false
-    },
-    {
-      id: 3,
-      user: "Admin",
-      message: "🌟 Welcome to San Diego Rescue Mission Community! This is a safe space for support, encouragement, and fellowship. Please be kind and supportive to one another.",
-      time: "7:00 AM",
-      type: "admin_announcement",
-      profilePicture: null,
-      likes: 8,
-      loved: false,
-      replies: [],
-      isAdmin: true
-    }
-  ]);
+  const [messages, setMessages] = useState([]);
   
   const [newMessage, setNewMessage] = useState("");
   const [messageType, setMessageType] = useState("post");
   const [adminMessage, setAdminMessage] = useState("");
-  const [newChatMessage, setNewChatMessage] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -515,31 +409,6 @@ function App() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSendChatMessage = (e) => {
-    e.preventDefault();
-    if (newChatMessage.trim() && currentChat) {
-      const newMsg = {
-        id: Date.now(),
-        sender: "You",
-        message: newChatMessage,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isMe: true,
-        timestamp: new Date()
-      };
-      
-      setChatConversations(prev => ({
-        ...prev,
-        [currentChat]: {
-          ...prev[currentChat],
-          messages: [...(prev[currentChat]?.messages || []), newMsg],
-          lastMessage: newChatMessage,
-          lastMessageTime: newMsg.time
-        }
-      }));
-      
-      setNewChatMessage("");
-    }
-  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -563,24 +432,11 @@ function App() {
         isAdmin: currentUser.isAdmin
       });
       
-      // Also add to local state for immediate display
-      const message = {
-        id: messages.length + 1,
-        user: currentUser.name,
-        message: newMessage,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: messageType,
-        profilePicture: currentUser.profilePicture,
-        likes: 0,
-        loved: false,
-        replies: [],
-        isAdmin: currentUser.isAdmin
-      };
-      setMessages([...messages, message]);
+      // Reload posts and statistics after new post
+      loadPosts();
+      loadStatistics();
       setNewMessage("");
       alert("Post shared successfully!");
-      // Reload statistics after new post
-      loadStatistics();
     } catch (error) {
       console.error("Error saving post:", error);
       console.error("Error details:", error.message);
@@ -651,305 +507,7 @@ function App() {
     }
   };
 
-  const startChat = (memberId) => {
-    setCurrentChat(memberId);
-    // Mark messages as read
-    if (chatConversations[memberId]) {
-      setChatConversations(prev => ({
-        ...prev,
-        [memberId]: {
-          ...prev[memberId],
-          unread: 0
-        }
-      }));
-    }
-  };
 
-  const filteredMembers = communityMembers.filter(member =>
-    member.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const sortedChats = Object.entries(chatConversations)
-    .map(([id, chat]) => ({
-      id: parseInt(id),
-      ...chat,
-      member: communityMembers.find(m => m.id === parseInt(id))
-    }))
-    .sort((a, b) => {
-      const aTime = a.messages[a.messages.length - 1]?.timestamp || 0;
-      const bTime = b.messages[b.messages.length - 1]?.timestamp || 0;
-      return new Date(bTime) - new Date(aTime);
-    });
-
-  // Messenger Interface
-  if (showMessenger) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #004990 0%, #F5A01D 100%)',
-        color: 'white',
-        display: 'flex'
-      }}>
-        {/* Sidebar - Chat List */}
-        <div style={{
-          width: '320px',
-          background: 'rgba(0,0,0,0.3)',
-          backdropFilter: 'blur(10px)',
-          borderRight: '1px solid rgba(255,255,255,0.1)',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          {/* Header */}
-          <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white', margin: 0 }}>Messages</h1>
-              <button
-                onClick={() => setShowMessenger(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'rgba(255,255,255,0.6)',
-                  cursor: 'pointer',
-                  padding: '5px'
-                }}
-              >
-                <ArrowLeft size={20} />
-              </button>
-            </div>
-            
-            {/* Search */}
-            <div style={{ position: 'relative' }}>
-              <Search style={{
-                position: 'absolute',
-                left: '12px',
-                top: '12px',
-                width: '16px',
-                height: '16px',
-                color: 'rgba(255,255,255,0.4)'
-              }} />
-              <input
-                type="text"
-                placeholder="Search conversations..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: 'rgba(100,100,100,0.3)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '12px',
-                  paddingLeft: '40px',
-                  paddingRight: '16px',
-                  paddingTop: '10px',
-                  paddingBottom: '10px',
-                  color: 'white',
-                  fontSize: '14px'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Chat List */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {sortedChats.map((chat) => (
-              <div
-                key={chat.id}
-                onClick={() => startChat(chat.id)}
-                style={{
-                  padding: '12px',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.3s',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  backgroundColor: currentChat === chat.id ? 'rgba(255,255,255,0.1)' : 'transparent'
-                }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = currentChat === chat.id ? 'rgba(255,255,255,0.1)' : 'transparent'}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ position: 'relative' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      background: '#F5A01D',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <User size={24} color="white" />
-                    </div>
-                    {chat.member?.online && (
-                      <div style={{
-                        position: 'absolute',
-                        bottom: '-2px',
-                        right: '-2px',
-                        width: '16px',
-                        height: '16px',
-                        background: '#10B981',
-                        borderRadius: '50%',
-                        border: '2px solid #1F2937'
-                      }}></div>
-                    )}
-                  </div>
-                  
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <h3 style={{ fontWeight: '500', color: 'white', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{chat.member?.name}</h3>
-                      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>{chat.lastMessageTime}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{chat.lastMessage}</p>
-                      {chat.unread > 0 && (
-                        <span style={{
-                          background: '#F5A01D',
-                          color: 'white',
-                          fontSize: '12px',
-                          borderRadius: '50%',
-                          padding: '2px 6px',
-                          marginLeft: '8px'
-                        }}>
-                          {chat.unread}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Main Chat Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {currentChat ? (
-            <>
-              {/* Chat Header */}
-              <div style={{
-                padding: '20px',
-                background: 'rgba(0,0,0,0.2)',
-                backdropFilter: 'blur(10px)',
-                borderBottom: '1px solid rgba(255,255,255,0.1)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ position: 'relative' }}>
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        background: '#F5A01D',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <User size={20} color="white" />
-                      </div>
-                      {communityMembers.find(m => m.id === currentChat)?.online && (
-                        <div style={{
-                          position: 'absolute',
-                          bottom: '-2px',
-                          right: '-2px',
-                          width: '12px',
-                          height: '12px',
-                          background: '#10B981',
-                          borderRadius: '50%',
-                          border: '2px solid #1F2937'
-                        }}></div>
-                      )}
-                    </div>
-                    <div>
-                      <h2 style={{ fontWeight: '600', color: 'white', margin: 0 }}>{communityMembers.find(m => m.id === currentChat)?.name}</h2>
-                      <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', margin: 0 }}>{communityMembers.find(m => m.id === currentChat)?.lastSeen}</p>
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button style={{ padding: '8px', background: 'none', border: 'none', borderRadius: '50%', cursor: 'pointer' }}>
-                      <Phone size={20} color="rgba(255,255,255,0.4)" />
-                    </button>
-                    <button style={{ padding: '8px', background: 'none', border: 'none', borderRadius: '50%', cursor: 'pointer' }}>
-                      <Video size={20} color="rgba(255,255,255,0.4)" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {(chatConversations[currentChat]?.messages || []).map((msg) => (
-                  <div key={msg.id} style={{ display: 'flex', justifyContent: msg.isMe ? 'flex-end' : 'flex-start' }}>
-                    <div style={{
-                      maxWidth: '70%',
-                      padding: '12px 16px',
-                      borderRadius: '18px',
-                      background: msg.isMe ? '#F5A01D' : 'rgba(100,100,100,0.3)',
-                      color: 'white'
-                    }}>
-                      <p style={{ fontSize: '14px', margin: 0, marginBottom: '4px' }}>{msg.message}</p>
-                      <p style={{
-                        fontSize: '12px',
-                        margin: 0,
-                        color: msg.isMe ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)'
-                      }}>
-                        {msg.time}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Message Input */}
-              <div style={{
-                padding: '20px',
-                background: 'rgba(0,0,0,0.2)',
-                backdropFilter: 'blur(10px)',
-                borderTop: '1px solid rgba(255,255,255,0.1)'
-              }}>
-                <form onSubmit={handleSendChatMessage} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <input
-                    type="text"
-                    value={newChatMessage}
-                    onChange={(e) => setNewChatMessage(e.target.value)}
-                    placeholder={`Message ${communityMembers.find(m => m.id === currentChat)?.name}...`}
-                    style={{
-                      flex: 1,
-                      background: 'rgba(100,100,100,0.3)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '12px',
-                      padding: '12px',
-                      color: 'white',
-                      fontSize: '16px'
-                    }}
-                  />
-                  <button 
-                    type="submit"
-                    style={{
-                      background: '#F5A01D',
-                      border: 'none',
-                      borderRadius: '12px',
-                      padding: '12px',
-                      cursor: 'pointer',
-                      transition: 'background-color 0.3s'
-                    }}
-                  >
-                    <Send size={16} color="white" />
-                  </button>
-                </form>
-              </div>
-            </>
-          ) : (
-            // No chat selected
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center' }}>
-                <MessageCircle size={64} color="rgba(255,255,255,0.4)" style={{ marginBottom: '16px' }} />
-                <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'white', marginBottom: '8px' }}>Select a conversation</h2>
-                <p style={{ color: 'rgba(255,255,255,0.4)' }}>Choose from your existing conversations or start a new one</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   // Profile Modal
   if (showProfile) {
@@ -974,18 +532,65 @@ function App() {
         }}>
           <h2 style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '20px', textAlign: 'center' }}>Your Profile</h2>
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-            <div style={{
-              width: '96px',
-              height: '96px',
-              background: '#F5A01D',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px',
-              cursor: 'pointer'
-            }}>
-              <User size={48} color="white" />
+            <div style={{ position: 'relative', display: 'inline-block', marginBottom: '20px' }}>
+              <div 
+                onClick={() => document.getElementById('profilePictureInput').click()}
+                style={{
+                  width: '96px',
+                  height: '96px',
+                  background: currentUser.profilePicture ? 'transparent' : '#F5A01D',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  overflow: 'hidden',
+                  border: '3px solid rgba(255,255,255,0.2)',
+                  transition: 'transform 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+              >
+                {currentUser.profilePicture ? (
+                  <img 
+                    src={currentUser.profilePicture} 
+                    alt="Profile" 
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                ) : (
+                  <User size={48} color="white" />
+                )}
+              </div>
+              <div style={{
+                position: 'absolute',
+                bottom: '0',
+                right: '0',
+                width: '28px',
+                height: '28px',
+                background: '#F5A01D',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                border: '2px solid white',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+              }}
+              onClick={() => document.getElementById('profilePictureInput').click()}
+              >
+                <Camera size={14} color="white" />
+              </div>
+              <input
+                id="profilePictureInput"
+                type="file"
+                accept="image/*"
+                onChange={handleProfilePictureUpload}
+                style={{ display: 'none' }}
+              />
             </div>
             <h3 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'white', margin: 0, marginBottom: '4px' }}>{currentUser.name}</h3>
             <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', margin: 0 }}>{currentUser.email}</p>
@@ -1056,6 +661,16 @@ function App() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // Admin Dashboard
+  if (showAdminDashboard && currentUser.isAdmin) {
+    return (
+      <AdminDashboard 
+        userEmail={currentUser.email}
+        onClose={() => setShowAdminDashboard(false)}
+      />
     );
   }
 
@@ -1200,44 +815,6 @@ function App() {
             
             {/* Right Side Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {/* Messenger Button */}
-              <button
-                onClick={() => setShowMessenger(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  transition: 'background-color 0.3s',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  backdropFilter: 'blur(10px)'
-                }}
-              >
-                <MessageCircle size={16} color="white" />
-                <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Messages</span>
-                {Object.values(chatConversations).reduce((total, chat) => total + chat.unread, 0) > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-4px',
-                    background: '#EF4444',
-                    color: 'white',
-                    fontSize: '12px',
-                    borderRadius: '50%',
-                    width: '20px',
-                    height: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {Object.values(chatConversations).reduce((total, chat) => total + chat.unread, 0)}
-                  </span>
-                )}
-              </button>
 
               {/* Journal Button */}
               <button
@@ -1265,23 +842,43 @@ function App() {
               </button>
 
               {currentUser.isAdmin && (
-                <button
-                  onClick={() => setShowAdminPanel(true)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: 'rgba(255,255,255,0.2)',
-                    border: 'none',
-                    padding: '10px 16px',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    backdropFilter: 'blur(10px)'
-                  }}
-                >
-                  <Shield size={16} color="white" />
-                  <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Admin</span>
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowAdminDashboard(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'linear-gradient(45deg, #F5A01D, #FDB44B)',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      backdropFilter: 'blur(10px)',
+                      boxShadow: '0 4px 15px rgba(245, 160, 29, 0.3)'
+                    }}
+                  >
+                    <Shield size={16} color="white" />
+                    <span style={{ color: 'white', fontSize: '14px', fontWeight: 'bold', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Admin Dashboard</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAdminPanel(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'rgba(255,255,255,0.2)',
+                      border: 'none',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      backdropFilter: 'blur(10px)'
+                    }}
+                  >
+                    <Megaphone size={16} color="white" />
+                    <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Announce</span>
+                  </button>
+                </>
               )}
               
               {/* User Profile */}
@@ -1289,18 +886,32 @@ function App() {
                 style={{
                   width: '40px',
                   height: '40px',
-                  background: 'rgba(255,255,255,0.2)',
+                  background: currentUser.profilePicture ? 'transparent' : 'rgba(255,255,255,0.2)',
                   backdropFilter: 'blur(10px)',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  transition: 'background-color 0.3s'
+                  transition: 'background-color 0.3s',
+                  overflow: 'hidden',
+                  border: currentUser.profilePicture ? '2px solid rgba(255,255,255,0.3)' : 'none'
                 }}
                 onClick={() => setShowProfile(true)}
               >
-                <User size={20} color="white" />
+                {currentUser.profilePicture ? (
+                  <img 
+                    src={currentUser.profilePicture} 
+                    alt="Profile" 
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                ) : (
+                  <User size={20} color="white" />
+                )}
               </div>
               
               {/* Sign Out Button */}
@@ -1454,13 +1065,26 @@ function App() {
                     <div style={{
                       width: '40px',
                       height: '40px',
-                      background: '#F5A01D',
+                      background: (msg.user === currentUser.name && currentUser.profilePicture) ? 'transparent' : '#F5A01D',
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      overflow: 'hidden'
                     }}>
-                      <User size={20} color="white" />
+                      {(msg.user === currentUser.name && currentUser.profilePicture) ? (
+                        <img 
+                          src={currentUser.profilePicture} 
+                          alt="Profile" 
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover'
+                          }}
+                        />
+                      ) : (
+                        <User size={20} color="white" />
+                      )}
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
