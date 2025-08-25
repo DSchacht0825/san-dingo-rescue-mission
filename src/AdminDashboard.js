@@ -17,10 +17,11 @@ import {
   TrendingUp,
   Eye,
   EyeOff,
-  Trash2
+  Trash2,
+  Shield
 } from 'lucide-react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from './firebase';
+import { db } from './firebase';
+import { collection, getDocs, query, where, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 const AdminDashboard = ({ currentUser, onClose }) => {
   const [reports, setReports] = useState(null);
@@ -28,14 +29,122 @@ const AdminDashboard = ({ currentUser, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
+  
+  // Admin management state
+  const [adminList, setAdminList] = useState([]);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
 
-  // Initialize Cloud Functions
-  const generateAdminReport = httpsCallable(functions, 'generateAdminReport');
-  const getUserList = httpsCallable(functions, 'getUserList');
-  const exportData = httpsCallable(functions, 'exportData');
-  const moderateContent = httpsCallable(functions, 'moderateContent');
+  // Hardcoded super admins (cannot be removed)
+  const superAdmins = [
+    "schacht.dan@gmail.com",
+    "daniel@sdrescuemission.org",
+    "dschacht@sdrescue.org"
+  ];
+  
+  const isAdmin = (email) => {
+    return superAdmins.includes(email.toLowerCase()) || 
+           adminList.some(admin => admin.email.toLowerCase() === email.toLowerCase());
+  };
 
-  // Load dashboard data
+  // Load admin list from Firestore
+  const loadAdminList = async () => {
+    try {
+      const adminDoc = await getDoc(doc(db, 'settings', 'admins'));
+      if (adminDoc.exists()) {
+        const adminData = adminDoc.data();
+        setAdminList(adminData.admins || []);
+      }
+    } catch (error) {
+      console.error('Error loading admin list:', error);
+    }
+  };
+
+  // Add new admin
+  const addAdmin = async () => {
+    if (!newAdminEmail.trim()) {
+      setError('Please enter an email address');
+      return;
+    }
+
+    const emailToAdd = newAdminEmail.toLowerCase().trim();
+    
+    // Check if already a super admin
+    if (superAdmins.includes(emailToAdd)) {
+      setError('This user is already a super admin');
+      return;
+    }
+
+    // Check if already in admin list
+    if (adminList.some(admin => admin.email.toLowerCase() === emailToAdd)) {
+      setError('This user is already an admin');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const newAdmin = {
+        email: emailToAdd,
+        addedBy: currentUser.email,
+        addedAt: new Date().toISOString(),
+        name: 'New Admin' // Will be updated when they login
+      };
+
+      const updatedAdmins = [...adminList, newAdmin];
+      
+      // Save to Firestore
+      await setDoc(doc(db, 'settings', 'admins'), {
+        admins: updatedAdmins,
+        lastModified: new Date().toISOString(),
+        modifiedBy: currentUser.email
+      });
+
+      setAdminList(updatedAdmins);
+      setNewAdminEmail('');
+      setError('');
+      
+    } catch (error) {
+      setError(`Failed to add admin: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Remove admin
+  const removeAdmin = async (emailToRemove) => {
+    if (superAdmins.includes(emailToRemove.toLowerCase())) {
+      setError('Cannot remove super admin');
+      return;
+    }
+
+    if (emailToRemove.toLowerCase() === currentUser.email.toLowerCase()) {
+      setError('Cannot remove yourself');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const updatedAdmins = adminList.filter(admin => 
+        admin.email.toLowerCase() !== emailToRemove.toLowerCase()
+      );
+      
+      // Save to Firestore
+      await setDoc(doc(db, 'settings', 'admins'), {
+        admins: updatedAdmins,
+        lastModified: new Date().toISOString(),
+        modifiedBy: currentUser.email
+      });
+
+      setAdminList(updatedAdmins);
+      setError('');
+      
+    } catch (error) {
+      setError(`Failed to remove admin: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load dashboard data directly from Firestore
   const loadDashboardData = async () => {
     setLoading(true);
     setError('');
@@ -43,21 +152,170 @@ const AdminDashboard = ({ currentUser, onClose }) => {
     try {
       console.log('Loading dashboard data for admin:', currentUser.email);
       
-      // Generate comprehensive report
-      const reportResult = await generateAdminReport({ 
-        userEmail: currentUser.email 
+      // Check admin privileges
+      if (!isAdmin(currentUser.email)) {
+        throw new Error('Admin access required');
+      }
+
+      // Get all posts directly from Firestore
+      const postsSnapshot = await getDocs(collection(db, 'posts'));
+      const posts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Get all journal entries (count only for privacy)
+      const journalSnapshot = await getDocs(collection(db, 'journalEntries'));
+
+      // Process data for reports
+      const uniqueUsers = new Set();
+      const postsByType = {};
+      const postsByDay = {};
+      const recentActivity = [];
+
+      posts.forEach(post => {
+        // Track unique users
+        if (post.userEmail) {
+          uniqueUsers.add(post.userEmail);
+        }
+
+        // Group by type
+        const type = post.type || 'post';
+        postsByType[type] = (postsByType[type] || 0) + 1;
+
+        // Group by day for activity chart
+        const date = post.createdAt?.toDate?.() || new Date(post.createdAt);
+        const dayKey = date.toISOString().split('T')[0];
+        postsByDay[dayKey] = (postsByDay[dayKey] || 0) + 1;
+
+        // Recent activity
+        recentActivity.push({
+          id: post.id,
+          user: post.userName || 'Unknown',
+          type: type,
+          message: post.text?.substring(0, 100) + (post.text?.length > 100 ? '...' : ''),
+          createdAt: date.toISOString()
+        });
       });
-      
-      console.log('Admin report received:', reportResult.data);
-      setReports(reportResult.data);
-      
-      // Get user list
-      const usersResult = await getUserList({ 
-        userEmail: currentUser.email 
+
+      // Sort recent activity by date
+      recentActivity.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      // Calculate metrics
+      const totalPosts = posts.length;
+      const activeUsers = uniqueUsers.size;
+      const postsPerUser = activeUsers > 0 ? (totalPosts / activeUsers).toFixed(1) : 0;
+
+      // Get date range for activity
+      const dates = Object.keys(postsByDay).sort();
+      const activityData = dates.slice(-30).map(date => ({
+        date,
+        posts: postsByDay[date] || 0
+      }));
+
+      const reportData = {
+        generatedAt: new Date().toISOString(),
+        generatedBy: currentUser.email,
+        
+        // Overview stats
+        overview: {
+          totalPosts,
+          activeUsers,
+          totalJournalEntries: journalSnapshot.size,
+          postsPerUser: parseFloat(postsPerUser)
+        },
+
+        // Post breakdown by type
+        postTypes: {
+          posts: postsByType.post || 0,
+          prayerRequests: postsByType.prayer_request || 0,
+          praiseReports: postsByType.praise_report || 0,
+          encouragement: postsByType.encouragement || 0,
+          adminAnnouncements: postsByType.admin_announcement || 0
+        },
+
+        // Activity over time (last 30 days)
+        activityChart: activityData,
+
+        // Recent activity
+        recentActivity: recentActivity.slice(0, 10),
+
+        // User engagement
+        engagement: {
+          averagePostsPerDay: totalPosts > 0 ? (totalPosts / Math.max(dates.length, 1)).toFixed(1) : 0,
+          mostActiveDay: dates.length > 0 ? Object.keys(postsByDay).reduce((a, b) => postsByDay[a] > postsByDay[b] ? a : b) : null,
+          peakActivity: Math.max(...Object.values(postsByDay))
+        }
+      };
+
+      console.log('Admin report generated:', reportData);
+      setReports(reportData);
+
+      // Process users data
+      const userStats = new Map();
+
+      // Process posts for user stats
+      posts.forEach(post => {
+        if (post.userEmail) {
+          if (!userStats.has(post.userEmail)) {
+            userStats.set(post.userEmail, {
+              email: post.userEmail,
+              name: post.userName || 'Unknown',
+              posts: 0,
+              journalEntries: 0,
+              lastActivity: null,
+              isAdmin: isAdmin(post.userEmail)
+            });
+          }
+          
+          const user = userStats.get(post.userEmail);
+          user.posts += 1;
+          
+          const postDate = post.createdAt?.toDate?.() || new Date(post.createdAt);
+          if (!user.lastActivity || postDate > user.lastActivity) {
+            user.lastActivity = postDate;
+          }
+        }
       });
-      
-      console.log('User list received:', usersResult.data);
-      setUsers(usersResult.data.users || []);
+
+      // Process journal entries for user stats
+      journalSnapshot.docs.forEach(doc => {
+        const entry = doc.data();
+        if (entry.userEmail) {
+          if (!userStats.has(entry.userEmail)) {
+            userStats.set(entry.userEmail, {
+              email: entry.userEmail,
+              name: entry.userName || 'Unknown',
+              posts: 0,
+              journalEntries: 0,
+              lastActivity: null,
+              isAdmin: isAdmin(entry.userEmail)
+            });
+          }
+          
+          const user = userStats.get(entry.userEmail);
+          user.journalEntries += 1;
+          
+          const entryDate = entry.createdAt?.toDate?.() || new Date(entry.createdAt);
+          if (!user.lastActivity || entryDate > user.lastActivity) {
+            user.lastActivity = entryDate;
+          }
+        }
+      });
+
+      // Convert to array and sort by last activity
+      const usersData = Array.from(userStats.values())
+        .map(user => ({
+          ...user,
+          lastActivity: user.lastActivity ? user.lastActivity.toISOString() : null,
+          totalActivity: user.posts + user.journalEntries
+        }))
+        .sort((a, b) => {
+          if (!a.lastActivity && !b.lastActivity) return 0;
+          if (!a.lastActivity) return 1;
+          if (!b.lastActivity) return -1;
+          return new Date(b.lastActivity) - new Date(a.lastActivity);
+        });
+
+      console.log('User data processed:', usersData);
+      setUsers(usersData);
       
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -71,18 +329,38 @@ const AdminDashboard = ({ currentUser, onClose }) => {
   const handleExport = async (dataType) => {
     try {
       setLoading(true);
-      const result = await exportData({ 
-        userEmail: currentUser.email, 
-        dataType 
-      });
+      let csvData = '';
+      let fileName = '';
+
+      if (dataType === 'users') {
+        csvData = 'Name,Email,Posts,Journal Entries,Last Activity,Is Admin\n';
+        users.forEach(user => {
+          const lastActivity = user.lastActivity ? new Date(user.lastActivity).toLocaleDateString() : 'Never';
+          csvData += `"${user.name}","${user.email}",${user.posts},${user.journalEntries},"${lastActivity}","${user.isAdmin ? 'Yes' : 'No'}"\n`;
+        });
+        fileName = `sdrm-users-${new Date().toISOString().split('T')[0]}.csv`;
+      } 
       
+      if (dataType === 'posts') {
+        // Get fresh posts data
+        const postsSnapshot = await getDocs(collection(db, 'posts'));
+        const posts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        csvData = 'Date,User,Email,Type,Message,Likes\n';
+        posts.forEach(post => {
+          const date = post.createdAt?.toDate?.() || new Date(post.createdAt);
+          csvData += `"${date.toLocaleDateString()}","${(post.userName || 'Unknown').replace(/"/g, '""')}","${post.userEmail || ''}","${post.type || 'post'}","${(post.text || '').replace(/"/g, '""').substring(0, 200)}","${post.likes || 0}"\n`;
+        });
+        fileName = `sdrm-posts-${new Date().toISOString().split('T')[0]}.csv`;
+      }
+
       // Create and download CSV file
-      const blob = new Blob([result.data.csvData], { type: 'text/csv' });
+      const blob = new Blob([csvData], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = result.data.fileName;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -100,6 +378,7 @@ const AdminDashboard = ({ currentUser, onClose }) => {
   // Load data on component mount
   useEffect(() => {
     loadDashboardData();
+    loadAdminList();
   }, [currentUser.email]);
 
   if (loading && !reports) {
@@ -224,7 +503,8 @@ const AdminDashboard = ({ currentUser, onClose }) => {
             { id: 'overview', label: 'Overview', icon: BarChart3 },
             { id: 'users', label: 'Users', icon: Users },
             { id: 'activity', label: 'Activity', icon: TrendingUp },
-            { id: 'export', label: 'Export', icon: Download }
+            { id: 'export', label: 'Export', icon: Download },
+            { id: 'admins', label: 'Admin Management', icon: Shield }
           ].map(tab => (
             <button
               key={tab.id}
@@ -588,6 +868,170 @@ const AdminDashboard = ({ currentUser, onClose }) => {
                 <li>User email addresses are included for administrative purposes only</li>
                 <li>Files are named with current date for easy organization</li>
               </ul>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'admins' && (
+          <div>
+            <h3 style={{margin: '0 0 20px 0', fontSize: '18px'}}>Admin Management</h3>
+            
+            {/* Add New Admin */}
+            <div style={{
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '20px'
+            }}>
+              <h4 style={{margin: '0 0 16px 0', fontSize: '16px'}}>Add New Administrator</h4>
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'center',
+                flexWrap: 'wrap'
+              }}>
+                <input
+                  type="email"
+                  placeholder="Enter email address"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  style={{
+                    flex: '1',
+                    minWidth: '250px',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'white',
+                    fontSize: '14px'
+                  }}
+                  onKeyPress={(e) => e.key === 'Enter' && addAdmin()}
+                />
+                <button
+                  onClick={addAdmin}
+                  disabled={loading || !newAdminEmail.trim()}
+                  style={{
+                    padding: '12px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: newAdminEmail.trim() ? '#F5A01D' : 'rgba(255,255,255,0.3)',
+                    color: 'white',
+                    cursor: newAdminEmail.trim() ? 'pointer' : 'not-allowed',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  Add Admin
+                </button>
+              </div>
+              <p style={{
+                fontSize: '12px',
+                opacity: 0.8,
+                margin: '8px 0 0 0'
+              }}>
+                New administrators will have full access to the admin dashboard and can manage users and content.
+              </p>
+            </div>
+
+            {/* Current Admins List */}
+            <div>
+              <h4 style={{margin: '0 0 16px 0', fontSize: '16px'}}>Current Administrators</h4>
+              
+              {/* Super Admins */}
+              <div style={{marginBottom: '20px'}}>
+                <h5 style={{margin: '0 0 12px 0', fontSize: '14px', opacity: 0.8}}>Super Administrators (Cannot be removed)</h5>
+                {superAdmins.map((email) => (
+                  <div key={email} style={{
+                    background: 'rgba(245,160,29,0.2)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    marginBottom: '8px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <strong>{email}</strong>
+                      <span style={{
+                        marginLeft: '8px',
+                        fontSize: '12px',
+                        padding: '2px 6px',
+                        background: 'rgba(245,160,29,0.3)',
+                        borderRadius: '4px'
+                      }}>
+                        SUPER ADMIN
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Added Admins */}
+              {adminList.length > 0 && (
+                <div>
+                  <h5 style={{margin: '0 0 12px 0', fontSize: '14px', opacity: 0.8}}>Added Administrators</h5>
+                  {adminList.map((admin) => (
+                    <div key={admin.email} style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      marginBottom: '8px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <strong>{admin.email}</strong>
+                        <div style={{fontSize: '12px', opacity: 0.7, marginTop: '4px'}}>
+                          Added by {admin.addedBy} on {new Date(admin.addedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeAdmin(admin.email)}
+                        disabled={loading}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: 'rgba(239,68,68,0.8)',
+                          color: 'white',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseOver={(e) => e.target.style.background = 'rgba(239,68,68,1)'}
+                        onMouseOut={(e) => e.target.style.background = 'rgba(239,68,68,0.8)'}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {adminList.length === 0 && (
+                <div style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  opacity: 0.8
+                }}>
+                  No additional administrators added yet.
+                </div>
+              )}
+            </div>
+
+            {/* Admin Management Info */}
+            <div style={{
+              background: 'rgba(59,130,246,0.2)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginTop: '20px',
+              fontSize: '12px'
+            }}>
+              <strong>Note:</strong> Admin permissions are checked in real-time. New administrators will have immediate access to all admin features including user management, content moderation, and data export capabilities.
             </div>
           </div>
         )}

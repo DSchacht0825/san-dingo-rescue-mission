@@ -668,7 +668,7 @@ function App() {
   if (showAdminDashboard && currentUser.isAdmin) {
     return (
       <AdminDashboard 
-        userEmail={currentUser.email}
+        currentUser={currentUser}
         onClose={() => setShowAdminDashboard(false)}
       />
     );

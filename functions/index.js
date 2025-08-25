@@ -26,7 +26,32 @@ const isAdmin = (email) => {
   return ADMIN_EMAILS.includes(email.toLowerCase());
 };
 
-// Generate comprehensive admin reports
+// HTTP endpoint for admin reports (publicly accessible but secured by email check)
+exports.getAdminReportHttp = onRequest({ cors: true }, async (req, res) => {
+  try {
+    // Handle both GET and POST requests
+    const userEmail = req.method === 'GET' ? req.query.userEmail : req.body?.data?.userEmail || req.body?.userEmail;
+    
+    console.log('Admin report requested for:', userEmail);
+    
+    // Check admin privileges
+    if (!userEmail || !isAdmin(userEmail)) {
+      console.log('Admin access denied for:', userEmail);
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Generate report data
+    const report = await generateReportData(userEmail);
+    res.status(200).json(report);
+    
+  } catch (error) {
+    console.error('Error generating admin report:', error);
+    res.status(500).json({ error: 'Failed to generate report' });
+  }
+});
+
+// Keep the original callable function for backward compatibility
 exports.generateAdminReport = onCall(async (request) => {
   const { userEmail } = request.data;
   
@@ -35,8 +60,12 @@ exports.generateAdminReport = onCall(async (request) => {
     throw new HttpsError('permission-denied', 'Admin access required');
   }
 
-  try {
-    logger.info('Generating admin report for:', userEmail);
+  return await generateReportData(userEmail);
+});
+
+// Extract report generation logic into reusable function
+const generateReportData = async (userEmail) => {
+  logger.info('Generating admin report for:', userEmail);
 
     // Get all posts
     const postsSnapshot = await db.collection('posts').get();
@@ -128,15 +157,10 @@ exports.generateAdminReport = onCall(async (request) => {
 
     logger.info('Admin report generated successfully');
     return report;
-
-  } catch (error) {
-    logger.error('Error generating admin report:', error);
-    throw new HttpsError('internal', 'Failed to generate report');
-  }
-});
+};
 
 // Get user list for admin management
-exports.getUserList = onCall(async (request) => {
+exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail } = request.data;
   
   if (!userEmail || !isAdmin(userEmail)) {
@@ -228,7 +252,7 @@ exports.getUserList = onCall(async (request) => {
 });
 
 // Export data for admin (CSV format)
-exports.exportData = onCall(async (request) => {
+exports.exportData = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail, dataType } = request.data;
   
   if (!userEmail || !isAdmin(userEmail)) {
@@ -326,7 +350,7 @@ exports.exportData = onCall(async (request) => {
 });
 
 // Moderate content (admin only)
-exports.moderateContent = onCall(async (request) => {
+exports.moderateContent = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail, action, contentId, contentType } = request.data;
   
   if (!userEmail || !isAdmin(userEmail)) {
