@@ -345,29 +345,48 @@ function App() {
   const [messageType, setMessageType] = useState("post");
   const [adminMessage, setAdminMessage] = useState("");
 
-  // Simple user database (in production, use proper database)
-  const userDatabase = {
-    "schacht.dan@gmail.com": { 
-      password: "admin123", 
-      name: "Daniel Schacht",
-      isAdmin: true 
-    },
-    "daniel@sdrescuemission.org": { 
-      password: "mission2025", 
-      name: "Daniel - SDRM",
-      isAdmin: true 
-    },
-    "test@example.com": { 
-      password: "test123", 
-      name: "Test User",
-      isAdmin: false 
-    },
-    "headshotwaco@gmail.com": { 
-      password: "headshot123", 
-      name: "Community Member",
-      isAdmin: false 
+  // Initialize user database from localStorage or use defaults
+  const initializeUserDatabase = () => {
+    const saved = localStorage.getItem('userDatabase');
+    if (saved) {
+      return JSON.parse(saved);
     }
+    
+    // Default accounts
+    const defaultDB = {
+      "schacht.dan@gmail.com": { 
+        password: "admin123", 
+        name: "Daniel Schacht",
+        isAdmin: true 
+      },
+      "daniel@sdrescuemission.org": { 
+        password: "mission2025", 
+        name: "Daniel - SDRM",
+        isAdmin: true 
+      },
+      "test@example.com": { 
+        password: "test123", 
+        name: "Test User",
+        isAdmin: false 
+      },
+      "headshotwaco@gmail.com": { 
+        password: "headshot123", 
+        name: "Community Member",
+        isAdmin: false 
+      }
+    };
+    
+    // Save defaults to localStorage
+    localStorage.setItem('userDatabase', JSON.stringify(defaultDB));
+    return defaultDB;
   };
+
+  const [userDatabase, setUserDatabase] = useState(initializeUserDatabase);
+
+  // Save userDatabase to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('userDatabase', JSON.stringify(userDatabase));
+  }, [userDatabase]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -378,22 +397,32 @@ function App() {
     
     if (authMode === "signup") {
       // Handle signup
+      console.log('Signup attempt:', { name, email, password: password ? 'provided' : 'missing' });
+      
       if (!name || !email || !password) {
         alert("Please fill in all fields");
         return;
       }
       
       if (userDatabase[email]) {
+        console.log('User already exists:', email);
         alert("User already exists. Please use a different email or sign in instead.");
         return;
       }
       
       // Add new user to database (in production, hash the password)
-      userDatabase[email] = {
-        password: password,
-        name: name,
-        isAdmin: adminEmails.includes(email)
+      const newUserDatabase = {
+        ...userDatabase,
+        [email]: {
+          password: password,
+          name: name,
+          isAdmin: adminEmails.includes(email)
+        }
       };
+      
+      console.log('Creating new user:', email, 'Database size before:', Object.keys(userDatabase).length);
+      setUserDatabase(newUserDatabase);
+      console.log('Database size after:', Object.keys(newUserDatabase).length);
       
       alert("Account created successfully! You can now sign in.");
       setAuthMode("login");
@@ -451,13 +480,18 @@ function App() {
     setResetSubmitting(true);
     try {
       const email = resetEmail.toLowerCase();
+      console.log('Looking for email:', email);
+      console.log('Available emails:', Object.keys(userDatabase));
+      
       const user = userDatabase[email];
       
       if (!user) {
+        console.log('User not found for email:', email);
         alert("Email not found. Please check your email address or create an account.");
         return;
       }
 
+      console.log('User found:', user);
       // In a real app, you'd send an email. For now, we'll show the password
       alert(`Password reset for ${email}\n\nYour password is: ${user.password}\n\n(In production, this would be sent via email)`);
       
