@@ -11,10 +11,11 @@
  * License: See LICENSE.md for usage terms
  */
 
-import React, { useState, useEffect } from "react";
-import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, Camera, HelpCircle } from "lucide-react";
-import { db } from "./firebase";
+import React, { useState, useEffect, useRef } from "react";
+import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Upload } from "lucide-react";
+import { db, storage } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import AdminDashboard from "./AdminDashboard";
 
 function App() {
@@ -38,6 +39,10 @@ function App() {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpMessage, setHelpMessage] = useState("");
   const [helpSubmitting, setHelpSubmitting] = useState(false);
+  
+  // Profile picture state
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
   
   // Statistics state
   const [statistics, setStatistics] = useState({
@@ -308,57 +313,8 @@ function App() {
     bio: ""
   });
 
-  // Image resizing function
-  const resizeImage = (file, maxWidth = 150, maxHeight = 150, quality = 0.8) => {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      
-      img.onload = () => {
-        // Calculate new dimensions
-        let { width, height } = img;
-        
-        if (width > height) {
-          if (width > maxWidth) {
-            height = (height * maxWidth) / width;
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = (width * maxHeight) / height;
-            height = maxHeight;
-          }
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        // Draw and compress
-        ctx.drawImage(img, 0, 0, width, height);
-        const resizedDataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(resizedDataUrl);
-      };
-      
-      img.src = URL.createObjectURL(file);
-    });
-  };
 
   // Handle profile picture upload
-  const handleProfilePictureUpload = async (event) => {
-    const file = event.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      try {
-        const resizedImage = await resizeImage(file);
-        setCurrentUser({ ...currentUser, profilePicture: resizedImage });
-      } catch (error) {
-        console.error('Error resizing image:', error);
-        alert('Error processing image. Please try again.');
-      }
-    } else {
-      alert('Please select a valid image file.');
-    }
-  };
 
   const [formData, setFormData] = useState({
     name: "",
@@ -383,23 +339,87 @@ function App() {
   const [messageType, setMessageType] = useState("post");
   const [adminMessage, setAdminMessage] = useState("");
 
-  const handleSubmit = (e) => {
+  // Simple user database (in production, use proper database)
+  const userDatabase = {
+    "schacht.dan@gmail.com": { 
+      password: "admin123", 
+      name: "Daniel Schacht",
+      isAdmin: true 
+    },
+    "daniel@sdrescuemission.org": { 
+      password: "mission2025", 
+      name: "Daniel - SDRM",
+      isAdmin: true 
+    },
+    "test@example.com": { 
+      password: "test123", 
+      name: "Test User",
+      isAdmin: false 
+    },
+    "headshotwaco@gmail.com": { 
+      password: "headshot123", 
+      name: "Community Member",
+      isAdmin: false 
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    const email = e.target.email ? e.target.email.value : formData.email;
-    const isUserAdmin = adminEmails.includes(email.toLowerCase());
+    const email = formData.email.toLowerCase();
+    const password = formData.password;
+    const name = formData.name;
     
+    if (authMode === "signup") {
+      // Handle signup
+      if (!name || !email || !password) {
+        alert("Please fill in all fields");
+        return;
+      }
+      
+      if (userDatabase[email]) {
+        alert("User already exists. Please use a different email or sign in instead.");
+        return;
+      }
+      
+      // Add new user to database (in production, hash the password)
+      userDatabase[email] = {
+        password: password,
+        name: name,
+        isAdmin: adminEmails.includes(email)
+      };
+      
+      alert("Account created successfully! You can now sign in.");
+      setAuthMode("login");
+      setFormData({ name: "", email: "", password: "", confirmPassword: "" });
+      return;
+    }
+    
+    // Handle login
+    if (!email || !password) {
+      alert("Please enter both email and password");
+      return;
+    }
+    
+    const user = userDatabase[email];
+    if (!user || user.password !== password) {
+      alert("Invalid email or password. Please try again.");
+      return;
+    }
+    
+    // Successful login
     setCurrentUser({
-      ...currentUser,
-      name: formData.name || "Community Member",
+      name: user.name,
       email: email,
-      isAdmin: isUserAdmin
+      isAdmin: user.isAdmin,
+      profilePicture: null,
+      bio: ""
     });
     
-    if (isUserAdmin) {
-      alert("Welcome back, Daniel! You have full admin access to San Diego Rescue Mission Community.");
+    if (user.isAdmin) {
+      alert(`Welcome back, ${user.name}! You have full admin access to San Diego Rescue Mission Community.`);
     } else {
-      alert("Welcome to San Diego Rescue Mission Community! Enjoy connecting with your support community.");
+      alert(`Welcome to San Diego Rescue Mission Community, ${user.name}! Enjoy connecting with your support community.`);
     }
     
     // Load user's journal entries after login
@@ -412,6 +432,111 @@ function App() {
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+
+
+
+  // Ultra-simple upload with debug logging
+  const uploadProfilePicture = async (file) => {
+    if (!file) {
+      console.log('No file provided');
+      return;
+    }
+    
+    console.log('🚀 Starting upload:', file.name, file.size);
+    
+    try {
+      setUploading(true);
+      
+      // Quick validation
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        setUploading(false);
+        return;
+      }
+      
+      console.log('✅ File validation passed');
+      
+      // Create simple 300px square thumbnail
+      console.log('🖼️ Starting image processing...');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      const processedFile = await new Promise((resolve, reject) => {
+        img.onload = () => {
+          try {
+            console.log('📐 Original image size:', img.width, 'x', img.height);
+            
+            // Always make it 300x300 square like profile pics should be
+            canvas.width = 300;
+            canvas.height = 300;
+            
+            // Draw image to fill the square (crop if needed)
+            const size = Math.min(img.width, img.height);
+            const x = (img.width - size) / 2;
+            const y = (img.height - size) / 2;
+            
+            console.log('✂️ Cropping from:', x, y, 'size:', size);
+            ctx.drawImage(img, x, y, size, size, 0, 0, 300, 300);
+            
+            // Convert to blob and done
+            canvas.toBlob((blob) => {
+              if (blob) {
+                console.log('✅ Image processed, new size:', blob.size);
+                resolve(blob);
+              } else {
+                console.error('❌ Failed to create blob');
+                reject(new Error('Failed to process image'));
+              }
+            }, 'image/jpeg', 0.85);
+          } catch (err) {
+            console.error('❌ Error in image processing:', err);
+            reject(err);
+          }
+        };
+        
+        img.onerror = () => {
+          console.error('❌ Failed to load image');
+          reject(new Error('Failed to load image'));
+        };
+        
+        img.src = URL.createObjectURL(file);
+      });
+      
+      // Upload directly to Firebase
+      console.log('☁️ Uploading to Firebase...');
+      const storageRef = ref(storage, `profile-pictures/${currentUser.email}`);
+      const snapshot = await uploadBytes(storageRef, processedFile);
+      console.log('✅ Upload complete, getting URL...');
+      
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      console.log('✅ Got download URL:', downloadURL);
+      
+      // Update user immediately
+      setCurrentUser({
+        ...currentUser,
+        profilePicture: downloadURL
+      });
+      
+      console.log('🎉 Profile picture updated successfully!');
+      
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      alert('Upload failed. Please try again.');
+    } finally {
+      console.log('🏁 Upload process finished');
+      setUploading(false);
+    }
+  };
+
+  // Handle file input change
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      uploadProfilePicture(file);
+    }
   };
 
 
@@ -572,25 +697,44 @@ function App() {
         }}>
           <h2 style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '20px', textAlign: 'center' }}>Your Profile</h2>
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-            <div style={{ position: 'relative', display: 'inline-block', marginBottom: '20px' }}>
+            <div style={{ display: 'inline-block', marginBottom: '20px' }}>
               <div 
-                onClick={() => document.getElementById('profilePictureInput').click()}
                 style={{
-                  width: '96px',
-                  height: '96px',
+                  width: '120px',
+                  height: '120px',
                   background: currentUser.profilePicture ? 'transparent' : '#F5A01D',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer',
                   overflow: 'hidden',
                   border: '3px solid rgba(255,255,255,0.2)',
-                  transition: 'transform 0.2s ease'
+                  position: 'relative',
+                  margin: '0 auto 16px',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                  opacity: uploading ? 0.7 : 1
                 }}
-                onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
-                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
               >
+{uploading && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(245,160,29,0.9)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2,
+                    color: 'white',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    Uploading...
+                  </div>
+                )}
                 {currentUser.profilePicture ? (
                   <img 
                     src={currentUser.profilePicture} 
@@ -602,33 +746,53 @@ function App() {
                     }}
                   />
                 ) : (
-                  <User size={48} color="white" />
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    color: 'white'
+                  }}>
+                    <User size={32} />
+                    <span style={{ fontSize: '10px', marginTop: '4px' }}>Add Photo</span>
+                  </div>
                 )}
               </div>
-              <div style={{
-                position: 'absolute',
-                bottom: '0',
-                right: '0',
-                width: '28px',
-                height: '28px',
-                background: '#F5A01D',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                border: '2px solid white',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-              }}
-              onClick={() => document.getElementById('profilePictureInput').click()}
-              >
-                <Camera size={14} color="white" />
+
+              {/* Upload Option */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                marginBottom: '16px' 
+              }}>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: uploading ? 'rgba(245,160,29,0.5)' : 'linear-gradient(45deg, #F5A01D, #FDB44B)',
+                    border: 'none',
+                    color: 'white',
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    cursor: uploading ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}
+                >
+                  <Upload size={16} />
+                  {uploading ? 'Uploading...' : 'Upload Photo'}
+                </button>
               </div>
+
               <input
-                id="profilePictureInput"
+                ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                onChange={handleProfilePictureUpload}
+                onChange={handleFileSelect}
                 style={{ display: 'none' }}
               />
             </div>
@@ -1793,6 +1957,7 @@ function App() {
             </div>
           </div>
         )}
+
       </div>
     );
   }
@@ -1984,12 +2149,17 @@ function App() {
             border: '1px solid rgba(100,100,100,0.3)'
           }}>
             <p style={{
-              fontSize: '12px',
+              fontSize: '11px',
               color: 'rgba(255,255,255,0.7)',
               textAlign: 'center',
-              margin: 0
+              margin: 0,
+              lineHeight: '1.4'
             }}>
-              Admin access: schacht.dan@gmail.com or daniel@sdrescuemission.org
+              <strong>Test Accounts:</strong><br/>
+              Admin: schacht.dan@gmail.com / admin123<br/>
+              Admin: daniel@sdrescuemission.org / mission2025<br/>
+              User: headshotwaco@gmail.com / headshot123<br/>
+              User: test@example.com / test123
             </p>
           </div>
         </div>
