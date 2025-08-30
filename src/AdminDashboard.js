@@ -13,15 +13,16 @@ import {
   Download, 
   RefreshCw, 
   BarChart3,
-  Calendar,
   TrendingUp,
-  Eye,
-  EyeOff,
   Trash2,
-  Shield
+  Shield,
+  AlertTriangle,
+  FileText,
+  HelpCircle,
+  CheckCircle
 } from 'lucide-react';
 import { db } from './firebase';
-import { collection, getDocs, query, where, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, doc, setDoc, deleteDoc, getDoc, orderBy } from 'firebase/firestore';
 
 const AdminDashboard = ({ currentUser, onClose }) => {
   const [reports, setReports] = useState(null);
@@ -33,6 +34,15 @@ const AdminDashboard = ({ currentUser, onClose }) => {
   // Admin management state
   const [adminList, setAdminList] = useState([]);
   const [newAdminEmail, setNewAdminEmail] = useState('');
+  
+  // Posts management state
+  const [posts, setPosts] = useState([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  
+  // Help requests state
+  const [helpRequests, setHelpRequests] = useState([]);
+  const [helpLoading, setHelpLoading] = useState(false);
 
   // Hardcoded super admins (cannot be removed)
   const superAdmins = [
@@ -56,6 +66,97 @@ const AdminDashboard = ({ currentUser, onClose }) => {
       }
     } catch (error) {
       console.error('Error loading admin list:', error);
+    }
+  };
+
+  // Load all posts for management
+  const loadPostsForManagement = async () => {
+    try {
+      setPostsLoading(true);
+      const postsQuery = query(
+        collection(db, 'posts'),
+        orderBy('createdAt', 'desc')
+      );
+      const postsSnapshot = await getDocs(postsQuery);
+      const postsData = postsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPosts(postsData);
+    } catch (error) {
+      console.error('Error loading posts:', error);
+      setError('Failed to load posts');
+    } finally {
+      setPostsLoading(false);
+    }
+  };
+
+  // Delete a post
+  const deletePost = async (postId) => {
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, 'posts', postId));
+      
+      // Remove from local state
+      setPosts(posts.filter(post => post.id !== postId));
+      
+      // Refresh reports if on overview tab
+      if (activeTab === 'overview') {
+        loadDashboardData();
+      }
+      
+      setDeleteConfirm(null);
+      alert('Post deleted successfully');
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      setError('Failed to delete post');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load help requests
+  const loadHelpRequests = async () => {
+    try {
+      setHelpLoading(true);
+      const helpQuery = query(
+        collection(db, 'help_requests'),
+        orderBy('createdAt', 'desc')
+      );
+      const helpSnapshot = await getDocs(helpQuery);
+      const helpData = helpSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setHelpRequests(helpData);
+    } catch (error) {
+      console.error('Error loading help requests:', error);
+      setError('Failed to load help requests');
+    } finally {
+      setHelpLoading(false);
+    }
+  };
+
+  // Mark help request as resolved
+  const markHelpResolved = async (requestId) => {
+    try {
+      await setDoc(doc(db, 'help_requests', requestId), {
+        status: 'resolved',
+        resolvedBy: currentUser.email,
+        resolvedAt: new Date()
+      }, { merge: true });
+      
+      // Update local state
+      setHelpRequests(helpRequests.map(req => 
+        req.id === requestId 
+          ? { ...req, status: 'resolved', resolvedBy: currentUser.email, resolvedAt: new Date() }
+          : req
+      ));
+      
+      alert('Help request marked as resolved');
+    } catch (error) {
+      console.error('Error marking help request as resolved:', error);
+      setError('Failed to update help request');
     }
   };
 
@@ -381,6 +482,20 @@ const AdminDashboard = ({ currentUser, onClose }) => {
     loadAdminList();
   }, [currentUser.email]);
 
+  // Load posts when Posts tab is selected
+  useEffect(() => {
+    if (activeTab === 'posts' && posts.length === 0) {
+      loadPostsForManagement();
+    }
+  }, [activeTab]);
+
+  // Load help requests when Help tab is selected  
+  useEffect(() => {
+    if (activeTab === 'help' && helpRequests.length === 0) {
+      loadHelpRequests();
+    }
+  }, [activeTab]);
+
   if (loading && !reports) {
     return (
       <div style={{
@@ -502,6 +617,8 @@ const AdminDashboard = ({ currentUser, onClose }) => {
           {[
             { id: 'overview', label: 'Overview', icon: BarChart3 },
             { id: 'users', label: 'Users', icon: Users },
+            { id: 'help', label: 'Help Requests', icon: HelpCircle },
+            { id: 'posts', label: 'Posts', icon: FileText },
             { id: 'activity', label: 'Activity', icon: TrendingUp },
             { id: 'export', label: 'Export', icon: Download },
             { id: 'admins', label: 'Admin Management', icon: Shield }
@@ -868,6 +985,383 @@ const AdminDashboard = ({ currentUser, onClose }) => {
                 <li>User email addresses are included for administrative purposes only</li>
                 <li>Files are named with current date for easy organization</li>
               </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Help Requests Tab */}
+        {activeTab === 'help' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{margin: 0, fontSize: '18px'}}>Help Requests</h3>
+              <button
+                onClick={loadHelpRequests}
+                disabled={helpLoading}
+                style={{
+                  background: '#F5A01D',
+                  border: 'none',
+                  color: 'white',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  cursor: helpLoading ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <RefreshCw size={16} />
+                Refresh Requests
+              </button>
+            </div>
+
+            {helpLoading ? (
+              <div style={{textAlign: 'center', padding: '40px'}}>
+                <RefreshCw size={32} style={{animation: 'spin 1s linear infinite'}} />
+                <p>Loading help requests...</p>
+              </div>
+            ) : helpRequests.length === 0 ? (
+              <div style={{
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                padding: '20px',
+                textAlign: 'center'
+              }}>
+                <HelpCircle size={48} color="rgba(255,255,255,0.5)" style={{marginBottom: '16px'}} />
+                <p>No help requests found. Click "Refresh Requests" to load.</p>
+              </div>
+            ) : (
+              <div style={{
+                maxHeight: '600px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
+              }}>
+                {helpRequests.map(request => (
+                  <div key={request.id} style={{
+                    background: request.status === 'resolved' 
+                      ? 'rgba(34,197,94,0.1)' 
+                      : 'rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    padding: '20px',
+                    border: request.status === 'pending' 
+                      ? '2px solid rgba(239,68,68,0.3)' 
+                      : '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    {/* Request Header */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '16px'
+                    }}>
+                      <div>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          marginBottom: '8px'
+                        }}>
+                          <HelpCircle size={20} color="#EF4444" />
+                          <strong style={{fontSize: '16px'}}>{request.userName || 'Unknown User'}</strong>
+                          <span style={{
+                            background: request.status === 'resolved' ? '#22C55E' : '#EF4444',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase'
+                          }}>
+                            {request.status || 'pending'}
+                          </span>
+                        </div>
+                        <div style={{fontSize: '12px', opacity: 0.6, marginBottom: '4px'}}>
+                          {request.userEmail}
+                        </div>
+                        <div style={{fontSize: '12px', opacity: 0.6}}>
+                          Submitted: {request.createdAt ? new Date(request.createdAt.toDate ? request.createdAt.toDate() : request.createdAt).toLocaleString() : 'Unknown time'}
+                        </div>
+                        {request.status === 'resolved' && (
+                          <div style={{fontSize: '12px', opacity: 0.6, color: '#22C55E'}}>
+                            Resolved by: {request.resolvedBy} on {request.resolvedAt ? new Date(request.resolvedAt.toDate ? request.resolvedAt.toDate() : request.resolvedAt).toLocaleDateString() : 'Unknown date'}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Action Button */}
+                      {request.status !== 'resolved' && (
+                        <button
+                          onClick={() => markHelpResolved(request.id)}
+                          style={{
+                            background: 'linear-gradient(45deg, #22C55E, #16A34A)',
+                            border: 'none',
+                            color: 'white',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          <CheckCircle size={14} />
+                          Mark Resolved
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Request Message */}
+                    <div style={{
+                      background: 'rgba(0,0,0,0.2)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      fontSize: '14px',
+                      lineHeight: '1.6',
+                      marginBottom: '12px'
+                    }}>
+                      {request.message || 'No message content'}
+                    </div>
+
+                    {/* Contact Info */}
+                    <div style={{
+                      background: 'rgba(245,160,29,0.1)',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.8)'
+                    }}>
+                      <strong>Contact:</strong> Reach out to {request.userName} at {request.userEmail} to provide assistance.
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Help Info */}
+            <div style={{
+              background: 'rgba(59,130,246,0.2)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginTop: '20px',
+              fontSize: '12px'
+            }}>
+              <strong>📧 Help Request Management:</strong> When users click "Need Help?", their messages are stored here. Contact them directly via email to provide support. Mark requests as resolved once you've addressed them.
+            </div>
+          </div>
+        )}
+
+        {/* Posts Management Tab */}
+        {activeTab === 'posts' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{margin: 0, fontSize: '18px'}}>Posts Management</h3>
+              <button
+                onClick={loadPostsForManagement}
+                disabled={postsLoading}
+                style={{
+                  background: '#F5A01D',
+                  border: 'none',
+                  color: 'white',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  cursor: postsLoading ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <RefreshCw size={16} />
+                Refresh Posts
+              </button>
+            </div>
+
+            {postsLoading ? (
+              <div style={{textAlign: 'center', padding: '40px'}}>
+                <RefreshCw size={32} style={{animation: 'spin 1s linear infinite'}} />
+                <p>Loading posts...</p>
+              </div>
+            ) : posts.length === 0 ? (
+              <div style={{
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                padding: '20px',
+                textAlign: 'center'
+              }}>
+                <p>No posts found. Click "Refresh Posts" to load.</p>
+              </div>
+            ) : (
+              <div style={{
+                maxHeight: '600px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                {posts.map(post => (
+                  <div key={post.id} style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    position: 'relative'
+                  }}>
+                    {/* Post Header */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '12px'
+                    }}>
+                      <div>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          marginBottom: '4px'
+                        }}>
+                          <strong>{post.userName || 'Unknown User'}</strong>
+                          {post.isAdmin && (
+                            <span style={{
+                              background: '#F5A01D',
+                              color: 'white',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '10px'
+                            }}>ADMIN</span>
+                          )}
+                          <span style={{
+                            background: post.type === 'prayer_request' ? 'rgba(239,68,68,0.2)' :
+                                       post.type === 'praise_report' ? 'rgba(34,197,94,0.2)' :
+                                       post.type === 'encouragement' ? 'rgba(59,130,246,0.2)' :
+                                       post.type === 'admin_announcement' ? 'rgba(245,160,29,0.2)' :
+                                       'rgba(255,255,255,0.1)',
+                            color: 'white',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px'
+                          }}>
+                            {post.type ? post.type.replace(/_/g, ' ').toUpperCase() : 'POST'}
+                          </span>
+                        </div>
+                        <div style={{fontSize: '12px', opacity: 0.6}}>
+                          {post.userEmail}
+                        </div>
+                        <div style={{fontSize: '12px', opacity: 0.6}}>
+                          {post.createdAt ? new Date(post.createdAt.toDate ? post.createdAt.toDate() : post.createdAt).toLocaleString() : 'Unknown time'}
+                        </div>
+                      </div>
+                      
+                      {/* Delete Button */}
+                      {deleteConfirm === post.id ? (
+                        <div style={{display: 'flex', gap: '8px'}}>
+                          <button
+                            onClick={() => deletePost(post.id)}
+                            style={{
+                              background: 'rgba(239,68,68,0.8)',
+                              border: 'none',
+                              color: 'white',
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <AlertTriangle size={14} />
+                            Confirm Delete
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(null)}
+                            style={{
+                              background: 'rgba(255,255,255,0.2)',
+                              border: 'none',
+                              color: 'white',
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirm(post.id)}
+                          style={{
+                            background: 'rgba(239,68,68,0.6)',
+                            border: 'none',
+                            color: 'white',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.8)'}
+                          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.6)'}
+                        >
+                          <Trash2 size={14} />
+                          Remove Post
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Post Content */}
+                    <div style={{
+                      background: 'rgba(0,0,0,0.2)',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      fontSize: '14px',
+                      lineHeight: '1.5'
+                    }}>
+                      {post.text || 'No content'}
+                    </div>
+
+                    {/* Post Stats */}
+                    <div style={{
+                      display: 'flex',
+                      gap: '16px',
+                      marginTop: '8px',
+                      fontSize: '12px',
+                      opacity: 0.6
+                    }}>
+                      <span>❤️ {post.likes || 0} likes</span>
+                      <span>💬 {post.replies ? post.replies.length : 0} replies</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Info Box */}
+            <div style={{
+              background: 'rgba(245,160,29,0.2)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginTop: '20px',
+              fontSize: '12px'
+            }}>
+              <strong>⚠️ Content Moderation:</strong> Review and remove inappropriate posts that violate community guidelines. Deleted posts cannot be recovered. Use this feature responsibly to maintain a safe and supportive community environment.
             </div>
           </div>
         )}

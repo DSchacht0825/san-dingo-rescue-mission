@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, Camera } from "lucide-react";
+import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, Camera, HelpCircle } from "lucide-react";
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
@@ -33,6 +33,11 @@ function App() {
   const [replyText, setReplyText] = useState("");
   const [journalEntries, setJournalEntries] = useState([]);
   const [showPastEntries, setShowPastEntries] = useState(false);
+  
+  // Help modal state
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpMessage, setHelpMessage] = useState("");
+  const [helpSubmitting, setHelpSubmitting] = useState(false);
   
   // Statistics state
   const [statistics, setStatistics] = useState({
@@ -409,6 +414,41 @@ function App() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+
+  // Handle help request submission
+  const handleHelpSubmit = async (e) => {
+    e.preventDefault();
+    if (!helpMessage.trim()) {
+      alert("Please enter a message");
+      return;
+    }
+
+    setHelpSubmitting(true);
+    try {
+      // Save help request to Firestore
+      await addDoc(collection(db, "help_requests"), {
+        message: helpMessage,
+        userEmail: currentUser.email,
+        userName: currentUser.name,
+        timestamp: serverTimestamp(),
+        createdAt: new Date(),
+        status: "pending",
+        adminNotified: true
+      });
+
+      // Clear form and close modal
+      setHelpMessage("");
+      setShowHelpModal(false);
+      
+      // Show success message
+      alert("Thank you for reaching out! A staff member will be in touch with you soon.");
+    } catch (error) {
+      console.error("Error submitting help request:", error);
+      alert("Sorry, there was an error submitting your request. Please try again.");
+    } finally {
+      setHelpSubmitting(false);
+    }
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -839,6 +879,26 @@ function App() {
               >
                 <BookOpen size={16} color="white" />
                 <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Journal</span>
+              </button>
+
+              {/* Help Button for all users */}
+              <button
+                onClick={() => setShowHelpModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'linear-gradient(45deg, #EF4444, #F87171)',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  backdropFilter: 'blur(10px)',
+                  boxShadow: '0 2px 10px rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                <HelpCircle size={16} color="white" />
+                <span style={{ color: 'white', fontSize: '14px', fontWeight: '500', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Need Help?</span>
               </button>
 
               {currentUser.isAdmin && (
@@ -1585,6 +1645,151 @@ function App() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Help Modal */}
+        {showHelpModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            backdropFilter: 'blur(10px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(248, 113, 113, 0.9))',
+              borderRadius: '20px',
+              padding: '30px',
+              maxWidth: '500px',
+              width: '100%',
+              border: '1px solid rgba(255,255,255,0.2)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <HelpCircle size={28} color="white" />
+                  <div>
+                    <h2 style={{ color: 'white', margin: 0, fontSize: '1.5rem', fontWeight: '600' }}>Need Help?</h2>
+                    <p style={{ color: 'rgba(255,255,255,0.8)', margin: 0, fontSize: '14px' }}>
+                      We're here to support you
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowHelpModal(false);
+                    setHelpMessage("");
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: 'white',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    fontSize: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={handleHelpSubmit}>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    color: 'rgba(255,255,255,0.9)', 
+                    fontSize: '14px', 
+                    fontWeight: '500',
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    How can we help you today?
+                  </label>
+                  <textarea
+                    value={helpMessage}
+                    onChange={(e) => setHelpMessage(e.target.value)}
+                    placeholder="Please share what you need help with. Whether it's prayer, resources, or someone to talk to, we're here for you..."
+                    required
+                    style={{
+                      width: '100%',
+                      minHeight: '150px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'white',
+                      fontSize: '14px',
+                      resize: 'vertical',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+
+                <div style={{ 
+                  background: 'rgba(255,255,255,0.1)', 
+                  borderRadius: '8px', 
+                  padding: '12px',
+                  marginBottom: '20px',
+                  fontSize: '12px',
+                  color: 'rgba(255,255,255,0.8)'
+                }}>
+                  <strong>Note:</strong> Your message will be sent directly to our administrative team. 
+                  We treat all requests with confidentiality and care.
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="submit"
+                    disabled={helpSubmitting}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: helpSubmitting ? 'rgba(255,255,255,0.3)' : 'white',
+                      color: helpSubmitting ? 'rgba(239,68,68,0.5)' : '#EF4444',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: helpSubmitting ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    {helpSubmitting ? 'Sending...' : 'Send Message'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHelpModal(false);
+                      setHelpMessage("");
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      background: 'transparent',
+                      color: 'white',
+                      fontSize: '16px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
