@@ -13,9 +13,10 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Upload } from "lucide-react";
-import { db, storage } from "./firebase";
+import { db, storage, auth } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { signInAnonymously } from "firebase/auth";
 import AdminDashboard from "./AdminDashboard";
 
 function App() {
@@ -39,6 +40,11 @@ function App() {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpMessage, setHelpMessage] = useState("");
   const [helpSubmitting, setHelpSubmitting] = useState(false);
+  
+  // Password reset modal state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSubmitting, setResetSubmitting] = useState(false);
   
   // Profile picture state
   const [uploading, setUploading] = useState(false);
@@ -434,99 +440,92 @@ function App() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // Handle password reset
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      alert("Please enter your email address");
+      return;
+    }
+
+    setResetSubmitting(true);
+    try {
+      const email = resetEmail.toLowerCase();
+      const user = userDatabase[email];
+      
+      if (!user) {
+        alert("Email not found. Please check your email address or create an account.");
+        return;
+      }
+
+      // In a real app, you'd send an email. For now, we'll show the password
+      alert(`Password reset for ${email}\n\nYour password is: ${user.password}\n\n(In production, this would be sent via email)`);
+      
+      setResetEmail("");
+      setShowResetModal(false);
+      
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      alert("Sorry, there was an error resetting your password. Please try again.");
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
 
 
 
-  // Ultra-simple upload with debug logging
+
+  // TEST: Direct upload with Firebase Auth
   const uploadProfilePicture = async (file) => {
     if (!file) {
-      console.log('No file provided');
+      console.log('❌ No file provided');
       return;
     }
     
-    console.log('🚀 Starting upload:', file.name, file.size);
+    console.log('🚀 FIREBASE AUTH TEST - Starting upload:', file.name, file.size, file.type);
     
     try {
       setUploading(true);
       
-      // Quick validation
+      // Basic validation only
       if (!file.type.startsWith('image/')) {
         alert('Please select an image file');
         setUploading(false);
         return;
       }
       
-      console.log('✅ File validation passed');
+      console.log('🔐 Authenticating with Firebase...');
+      // Sign in anonymously to Firebase (required for Storage)
+      await signInAnonymously(auth);
+      console.log('✅ Firebase authentication successful!');
       
-      // Create simple 300px square thumbnail
-      console.log('🖼️ Starting image processing...');
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
+      console.log('✅ File validation passed - uploading original file directly');
       
-      const processedFile = await new Promise((resolve, reject) => {
-        img.onload = () => {
-          try {
-            console.log('📐 Original image size:', img.width, 'x', img.height);
-            
-            // Always make it 300x300 square like profile pics should be
-            canvas.width = 300;
-            canvas.height = 300;
-            
-            // Draw image to fill the square (crop if needed)
-            const size = Math.min(img.width, img.height);
-            const x = (img.width - size) / 2;
-            const y = (img.height - size) / 2;
-            
-            console.log('✂️ Cropping from:', x, y, 'size:', size);
-            ctx.drawImage(img, x, y, size, size, 0, 0, 300, 300);
-            
-            // Convert to blob and done
-            canvas.toBlob((blob) => {
-              if (blob) {
-                console.log('✅ Image processed, new size:', blob.size);
-                resolve(blob);
-              } else {
-                console.error('❌ Failed to create blob');
-                reject(new Error('Failed to process image'));
-              }
-            }, 'image/jpeg', 0.85);
-          } catch (err) {
-            console.error('❌ Error in image processing:', err);
-            reject(err);
-          }
-        };
-        
-        img.onerror = () => {
-          console.error('❌ Failed to load image');
-          reject(new Error('Failed to load image'));
-        };
-        
-        img.src = URL.createObjectURL(file);
-      });
+      // Upload the original file directly
+      const storageRef = ref(storage, `profile-pictures/test-${currentUser.email}-${Date.now()}`);
       
-      // Upload directly to Firebase
-      console.log('☁️ Uploading to Firebase...');
-      const storageRef = ref(storage, `profile-pictures/${currentUser.email}`);
-      const snapshot = await uploadBytes(storageRef, processedFile);
-      console.log('✅ Upload complete, getting URL...');
+      console.log('☁️ Uploading directly to Firebase Storage...');
+      const snapshot = await uploadBytes(storageRef, file);
+      console.log('✅ Upload complete! Getting download URL...');
       
       const downloadURL = await getDownloadURL(snapshot.ref);
       console.log('✅ Got download URL:', downloadURL);
       
-      // Update user immediately
+      // Update user profile
       setCurrentUser({
         ...currentUser,
         profilePicture: downloadURL
       });
       
-      console.log('🎉 Profile picture updated successfully!');
+      alert('SUCCESS! Upload with Firebase Auth worked!');
+      console.log('🎉 Firebase Auth upload test successful!');
       
     } catch (error) {
-      console.error('❌ Upload error:', error);
-      alert('Upload failed. Please try again.');
+      console.error('❌ Upload failed:', error);
+      console.error('Error details:', error.code, error.message);
+      alert(`Upload failed: ${error.message}`);
     } finally {
-      console.log('🏁 Upload process finished');
+      console.log('🏁 Firebase Auth upload test finished');
       setUploading(false);
     }
   };
@@ -2139,6 +2138,25 @@ function App() {
             >
               {authMode === "login" ? "Sign In" : "Join San Diego Rescue Mission"}
             </button>
+            
+            {authMode === "login" && (
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(true)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.7)',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Forgot Password?
+                </button>
+              </div>
+            )}
           </form>
           
           <div style={{
@@ -2163,6 +2181,147 @@ function App() {
             </p>
           </div>
         </div>
+        
+        {/* Password Reset Modal */}
+        {showResetModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            backdropFilter: 'blur(10px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(0, 73, 144, 0.9), rgba(245, 160, 29, 0.9))',
+              borderRadius: '20px',
+              padding: '30px',
+              maxWidth: '400px',
+              width: '100%',
+              border: '1px solid rgba(255,255,255,0.2)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ color: 'white', margin: 0, fontSize: '1.5rem', fontWeight: '600' }}>Reset Password</h2>
+                  <p style={{ color: 'rgba(255,255,255,0.8)', margin: 0, fontSize: '14px' }}>
+                    Enter your email to reset your password
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowResetModal(false);
+                    setResetEmail("");
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: 'white',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    fontSize: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={handlePasswordReset}>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    color: 'rgba(255,255,255,0.9)', 
+                    fontSize: '14px', 
+                    fontWeight: '500',
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="Enter your email address"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'rgba(255,255,255,0.1)',
+                      color: 'white',
+                      fontSize: '16px',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+
+                <div style={{ 
+                  background: 'rgba(255,255,255,0.1)', 
+                  borderRadius: '8px', 
+                  padding: '12px',
+                  marginBottom: '20px',
+                  fontSize: '12px',
+                  color: 'rgba(255,255,255,0.8)'
+                }}>
+                  <strong>Note:</strong> This will show your current password. In production, 
+                  a reset link would be sent to your email.
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="submit"
+                    disabled={resetSubmitting}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: resetSubmitting ? 'rgba(255,255,255,0.3)' : 'white',
+                      color: resetSubmitting ? 'rgba(0,73,144,0.5)' : '#004990',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: resetSubmitting ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    {resetSubmitting ? 'Resetting...' : 'Reset Password'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowResetModal(false);
+                      setResetEmail("");
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      background: 'transparent',
+                      color: 'white',
+                      fontSize: '16px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
