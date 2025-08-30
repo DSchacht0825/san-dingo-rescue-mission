@@ -2167,17 +2167,13 @@ function App() {
             border: '1px solid rgba(100,100,100,0.3)'
           }}>
             <p style={{
-              fontSize: '11px',
+              fontSize: '12px',
               color: 'rgba(255,255,255,0.7)',
               textAlign: 'center',
               margin: 0,
               lineHeight: '1.4'
             }}>
-              <strong>Test Accounts:</strong><br/>
-              Admin: schacht.dan@gmail.com / admin123<br/>
-              Admin: daniel@sdrescuemission.org / mission2025<br/>
-              User: headshotwaco@gmail.com / headshot123<br/>
-              User: test@example.com / test123
+              Need an account? Contact your administrator or use the "Join" option above.
             </p>
           </div>
         </div>
