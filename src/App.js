@@ -17,7 +17,8 @@ import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
 // import { uploadToCloudinary, saveToLocalStorage } from "./uploadHelper";
-import { SimpleProfileUpload } from "./SimpleUpload";
+// import { SimpleProfileUpload } from "./SimpleUpload";
+import { CloudinaryUpload } from "./CloudinaryOnly";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -652,12 +653,20 @@ function App() {
 
 
 
-  // Profile Modal - Using SimpleProfileUpload with Cloudinary
+  // Profile Modal - Using CloudinaryUpload (100% isolated)
   if (showProfile) {
-    return <SimpleProfileUpload 
-      currentUser={currentUser} 
-      setCurrentUser={setCurrentUser} 
-      setShowProfile={setShowProfile} 
+    return <CloudinaryUpload 
+      user={currentUser}
+      onSuccess={(url) => {
+        // Save URL to localStorage
+        const profiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
+        profiles[currentUser.email] = url;
+        localStorage.setItem('userProfiles', JSON.stringify(profiles));
+        
+        // Update current user
+        setCurrentUser(prev => ({ ...prev, profilePicture: url }));
+      }}
+      onClose={() => setShowProfile(false)}
     />;
   }
   

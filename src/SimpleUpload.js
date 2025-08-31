@@ -6,15 +6,20 @@ export const SimpleProfileUpload = ({ currentUser, setCurrentUser, setShowProfil
   const [error, setError] = useState('');
   
   const handleUpload = async (event) => {
+    console.log('=== UPLOAD HANDLER START ===');
+    console.log('This is SimpleUpload.js - NO Firebase here');
+    
     const file = event.target.files[0];
     if (!file) return;
     
+    console.log('File selected:', file.name);
     setUploading(true);
     setError('');
     
     try {
       // CLOUDINARY UPLOAD - Direct, no Firebase involved
       console.log('Starting Cloudinary upload...');
+      console.log('NO Firebase Auth is being called here');
       
       const formData = new FormData();
       formData.append('file', file);
