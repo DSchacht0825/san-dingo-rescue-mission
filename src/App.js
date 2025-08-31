@@ -16,6 +16,7 @@ import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, R
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
+import { uploadToCloudinary, saveToLocalStorage } from "./uploadHelper";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -511,115 +512,44 @@ function App() {
 
 
 
-  // PRODUCTION-READY: Cloud storage with user isolation
+  // NEW: Isolated upload function - NO Firebase dependencies
   const uploadProfilePicture = async (file) => {
-    console.log('=== UPLOAD START ===');
-    console.log('1. Function called with file:', file?.name);
+    console.log('=== NEW ISOLATED UPLOAD ===');
+    if (!file) return;
     
-    if (!file) {
-      console.log('❌ No file provided');
-      return;
-    }
-    
-    console.log('🚀 PRODUCTION UPLOAD - Starting for user:', currentUser.email);
-    console.log('📁 File details:', file.name, file.size, file.type);
-    console.log('2. About to set uploading state');
+    setUploading(true);
     
     try {
-      setUploading(true);
-      console.log('3. Uploading state set to true');
+      // Try Cloudinary first (completely isolated from Firebase)
+      const url = await uploadToCloudinary(file, currentUser.email);
       
-      // 1. Validation
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
-        setUploading(false);
-        return;
-      }
-      
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        alert('Please select a smaller image (max 10MB)');
-        setUploading(false);
-        return;
-      }
-      
-      console.log('✅ Validation passed');
-      
-      // 2. Create FormData for cloud upload
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', 'sdrm_profiles'); // Cloudinary preset
-      formData.append('public_id', `profile_${currentUser.email.replace('@', '_').replace('.', '_')}_${Date.now()}`);
-      formData.append('folder', 'sdrm/profiles');
-      
-      console.log('4. About to upload to Cloudinary');
-      console.log('☁️ Uploading to cloud storage...');
-      
-      // 3. Upload to Cloudinary (free cloud storage)
-      const CLOUD_NAME = 'dbijh2a3u'; // Your Cloudinary cloud name
-      console.log('5. Cloudinary URL:', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`);
-      
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-        method: 'POST',
-        body: formData // Don't set Content-Type - let browser handle it
-      });
-      
-      console.log('6. Cloudinary response received:', response.status);
-      
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      console.log('✅ Cloud upload successful:', result.secure_url);
-      
-      // 4. Store user-specific profile URL
-      const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
-      userProfiles[currentUser.email] = result.secure_url;
-      localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
-      
-      console.log('✅ User profile URL saved');
-      
-      // 5. Update current user only
+      // Update current user
       setCurrentUser({
         ...currentUser,
-        profilePicture: result.secure_url
+        profilePicture: url
       });
       
-      console.log('🎉 Profile picture updated for:', currentUser.email);
       alert('Profile picture uploaded successfully!');
       
-    } catch (error) {
-      console.error('❌ Upload failed:', error);
+    } catch (cloudinaryError) {
+      console.error('Cloudinary failed:', cloudinaryError);
       
-      // Fallback to localStorage for demo
-      console.log('🔄 Falling back to localStorage...');
+      // Fallback to localStorage
       try {
-        const dataURL = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        
-        // User-specific localStorage key
-        const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
-        userProfiles[currentUser.email] = dataURL;
-        localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+        const dataURL = await saveToLocalStorage(file, currentUser.email);
         
         setCurrentUser({
           ...currentUser,
           profilePicture: dataURL
         });
         
-        console.log('✅ Fallback successful for user:', currentUser.email);
-        alert('Profile picture uploaded (local storage fallback)');
+        alert('Profile picture saved locally!');
         
-      } catch (fallbackError) {
-        console.error('❌ Fallback also failed:', fallbackError);
+      } catch (localError) {
+        console.error('Local storage also failed:', localError);
         alert('Upload failed. Please try again.');
       }
     } finally {
-      console.log('🏁 Upload finished');
       setUploading(false);
     }
   };
