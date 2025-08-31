@@ -48,7 +48,7 @@ function App() {
   
   // Profile picture state
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef(null);
+  // const fileInputRef = useRef(null); // Removed - not needed with SimpleUpload
   
   // Statistics state
   const [statistics, setStatistics] = useState({
@@ -652,15 +652,16 @@ function App() {
 
 
 
-  // Profile Modal - Using SimpleProfileUpload for emergency fix
+  // Profile Modal - Using SimpleProfileUpload with Cloudinary
   if (showProfile) {
     return <SimpleProfileUpload 
       currentUser={currentUser} 
       setCurrentUser={setCurrentUser} 
       setShowProfile={setShowProfile} 
     />;
-    /* OLD MODAL COMMENTED OUT FOR EMERGENCY FIX
-    return (
+  }
+  
+  /* REMOVED OLD MODAL CODE
       <div style={{
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #004990 0%, #F5A01D 100%)',
@@ -851,7 +852,6 @@ function App() {
       </div>
     );
     */ // END OF OLD MODAL COMMENT
-  }
 
   // Admin Dashboard
   if (showAdminDashboard && currentUser.isAdmin) {
