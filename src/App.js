@@ -442,12 +442,16 @@ function App() {
       return;
     }
     
+    // Load user-specific profile picture
+    const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
+    const savedProfilePicture = userProfiles[email];
+    
     // Successful login
     setCurrentUser({
       name: user.name,
       email: email,
       isAdmin: user.isAdmin,
-      profilePicture: null,
+      profilePicture: savedProfilePicture || null,
       bio: ""
     });
     
@@ -509,57 +513,105 @@ function App() {
 
 
 
-  // TEST: Direct upload with Firebase Auth
+  // PRODUCTION-READY: Cloud storage with user isolation
   const uploadProfilePicture = async (file) => {
     if (!file) {
       console.log('❌ No file provided');
       return;
     }
     
-    console.log('🚀 FIREBASE AUTH TEST - Starting upload:', file.name, file.size, file.type);
+    console.log('🚀 PRODUCTION UPLOAD - Starting for user:', currentUser.email);
+    console.log('📁 File details:', file.name, file.size, file.type);
     
     try {
       setUploading(true);
       
-      // Basic validation only
+      // 1. Validation
       if (!file.type.startsWith('image/')) {
         alert('Please select an image file');
         setUploading(false);
         return;
       }
       
-      console.log('🔐 Authenticating with Firebase...');
-      // Sign in anonymously to Firebase (required for Storage)
-      await signInAnonymously(auth);
-      console.log('✅ Firebase authentication successful!');
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        alert('Please select a smaller image (max 10MB)');
+        setUploading(false);
+        return;
+      }
       
-      console.log('✅ File validation passed - uploading original file directly');
+      console.log('✅ Validation passed');
       
-      // Upload the original file directly
-      const storageRef = ref(storage, `profile-pictures/test-${currentUser.email}-${Date.now()}`);
+      // 2. Create FormData for cloud upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'sdrm_profiles'); // Cloudinary preset
+      formData.append('public_id', `profile_${currentUser.email.replace('@', '_').replace('.', '_')}_${Date.now()}`);
+      formData.append('folder', 'sdrm/profiles');
       
-      console.log('☁️ Uploading directly to Firebase Storage...');
-      const snapshot = await uploadBytes(storageRef, file);
-      console.log('✅ Upload complete! Getting download URL...');
+      console.log('☁️ Uploading to cloud storage...');
       
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      console.log('✅ Got download URL:', downloadURL);
-      
-      // Update user profile
-      setCurrentUser({
-        ...currentUser,
-        profilePicture: downloadURL
+      // 3. Upload to Cloudinary (free cloud storage)
+      const CLOUD_NAME = 'dbijh2a3u'; // Your Cloudinary cloud name
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+        method: 'POST',
+        body: formData // Don't set Content-Type - let browser handle it
       });
       
-      alert('SUCCESS! Upload with Firebase Auth worked!');
-      console.log('🎉 Firebase Auth upload test successful!');
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Cloud upload successful:', result.secure_url);
+      
+      // 4. Store user-specific profile URL
+      const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
+      userProfiles[currentUser.email] = result.secure_url;
+      localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+      
+      console.log('✅ User profile URL saved');
+      
+      // 5. Update current user only
+      setCurrentUser({
+        ...currentUser,
+        profilePicture: result.secure_url
+      });
+      
+      console.log('🎉 Profile picture updated for:', currentUser.email);
+      alert('Profile picture uploaded successfully!');
       
     } catch (error) {
       console.error('❌ Upload failed:', error);
-      console.error('Error details:', error.code, error.message);
-      alert(`Upload failed: ${error.message}`);
+      
+      // Fallback to localStorage for demo
+      console.log('🔄 Falling back to localStorage...');
+      try {
+        const dataURL = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        
+        // User-specific localStorage key
+        const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
+        userProfiles[currentUser.email] = dataURL;
+        localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+        
+        setCurrentUser({
+          ...currentUser,
+          profilePicture: dataURL
+        });
+        
+        console.log('✅ Fallback successful for user:', currentUser.email);
+        alert('Profile picture uploaded (local storage fallback)');
+        
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError);
+        alert('Upload failed. Please try again.');
+      }
     } finally {
-      console.log('🏁 Firebase Auth upload test finished');
+      console.log('🏁 Upload finished');
       setUploading(false);
     }
   };
