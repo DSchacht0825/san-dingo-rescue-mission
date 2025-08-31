@@ -13,10 +13,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Upload } from "lucide-react";
-import { db, storage, auth } from "./firebase";
+import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { signInAnonymously } from "firebase/auth";
 import AdminDashboard from "./AdminDashboard";
 
 function App() {
