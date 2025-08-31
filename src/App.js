@@ -16,7 +16,8 @@ import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, R
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
-import { uploadToCloudinary, saveToLocalStorage } from "./uploadHelper";
+// import { uploadToCloudinary, saveToLocalStorage } from "./uploadHelper";
+import { SimpleProfileUpload } from "./SimpleUpload";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -512,63 +513,9 @@ function App() {
 
 
 
-  // NEW: Isolated upload function - NO Firebase dependencies
-  const uploadProfilePicture = async (file) => {
-    console.log('=== NEW ISOLATED UPLOAD ===');
-    if (!file) return;
-    
-    setUploading(true);
-    
-    try {
-      // Try Cloudinary first (completely isolated from Firebase)
-      const url = await uploadToCloudinary(file, currentUser.email);
-      
-      // Update current user
-      setCurrentUser({
-        ...currentUser,
-        profilePicture: url
-      });
-      
-      alert('Profile picture uploaded successfully!');
-      
-    } catch (cloudinaryError) {
-      console.error('Cloudinary failed:', cloudinaryError);
-      
-      // Fallback to localStorage
-      try {
-        const dataURL = await saveToLocalStorage(file, currentUser.email);
-        
-        setCurrentUser({
-          ...currentUser,
-          profilePicture: dataURL
-        });
-        
-        alert('Profile picture saved locally!');
-        
-      } catch (localError) {
-        console.error('Local storage also failed:', localError);
-        alert('Upload failed. Please try again.');
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Handle file input change
-  const handleFileSelect = (event) => {
-    console.log('handleFileSelect called');
-    try {
-      const file = event.target.files[0];
-      console.log('File selected:', file?.name);
-      if (file) {
-        console.log('Calling uploadProfilePicture...');
-        uploadProfilePicture(file);
-      }
-    } catch (error) {
-      console.error('Error in handleFileSelect:', error);
-      alert('Error selecting file: ' + error.message);
-    }
-  };
+  // COMMENTED OUT - Using SimpleUpload instead
+  // const uploadProfilePicture = async (file) => { ... }
+  // const handleFileSelect = (event) => { ... }
 
 
   // Handle help request submission
@@ -705,8 +652,14 @@ function App() {
 
 
 
-  // Profile Modal
+  // Profile Modal - Using SimpleProfileUpload for emergency fix
   if (showProfile) {
+    return <SimpleProfileUpload 
+      currentUser={currentUser} 
+      setCurrentUser={setCurrentUser} 
+      setShowProfile={setShowProfile} 
+    />;
+    /* OLD MODAL COMMENTED OUT FOR EMERGENCY FIX
     return (
       <div style={{
         minHeight: '100vh',
@@ -897,6 +850,7 @@ function App() {
         </div>
       </div>
     );
+    */ // END OF OLD MODAL COMMENT
   }
 
   // Admin Dashboard
