@@ -513,6 +513,9 @@ function App() {
 
   // PRODUCTION-READY: Cloud storage with user isolation
   const uploadProfilePicture = async (file) => {
+    console.log('=== UPLOAD START ===');
+    console.log('1. Function called with file:', file?.name);
+    
     if (!file) {
       console.log('❌ No file provided');
       return;
@@ -520,9 +523,11 @@ function App() {
     
     console.log('🚀 PRODUCTION UPLOAD - Starting for user:', currentUser.email);
     console.log('📁 File details:', file.name, file.size, file.type);
+    console.log('2. About to set uploading state');
     
     try {
       setUploading(true);
+      console.log('3. Uploading state set to true');
       
       // 1. Validation
       if (!file.type.startsWith('image/')) {
@@ -546,14 +551,19 @@ function App() {
       formData.append('public_id', `profile_${currentUser.email.replace('@', '_').replace('.', '_')}_${Date.now()}`);
       formData.append('folder', 'sdrm/profiles');
       
+      console.log('4. About to upload to Cloudinary');
       console.log('☁️ Uploading to cloud storage...');
       
       // 3. Upload to Cloudinary (free cloud storage)
       const CLOUD_NAME = 'dbijh2a3u'; // Your Cloudinary cloud name
+      console.log('5. Cloudinary URL:', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`);
+      
       const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
         method: 'POST',
         body: formData // Don't set Content-Type - let browser handle it
       });
+      
+      console.log('6. Cloudinary response received:', response.status);
       
       if (!response.ok) {
         throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
@@ -616,9 +626,17 @@ function App() {
 
   // Handle file input change
   const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      uploadProfilePicture(file);
+    console.log('handleFileSelect called');
+    try {
+      const file = event.target.files[0];
+      console.log('File selected:', file?.name);
+      if (file) {
+        console.log('Calling uploadProfilePicture...');
+        uploadProfilePicture(file);
+      }
+    } catch (error) {
+      console.error('Error in handleFileSelect:', error);
+      alert('Error selecting file: ' + error.message);
     }
   };
 
