@@ -1,0 +1,145 @@
+/* Mobile-responsive header styles */
+.header-container {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(90deg, #004990 0%, #F5A01D 100%);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  z-index: 50;
+}
+
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-circle {
+  width: 100px;
+  height: 100px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.logo-image {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+.logo-text h1 {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: white;
+  margin: 0;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  line-height: 1.2;
+}
+
+.logo-text p {
+  font-size: 12px;
+  color: rgba(255,255,255,0.8);
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.header-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s;
+  backdrop-filter: blur(10px);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.header-btn-text {
+  display: inline;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .header-container {
+    padding: 10px;
+  }
+  
+  .header-content {
+    gap: 10px;
+  }
+  
+  .logo-section {
+    gap: 8px;
+    flex: 1;
+  }
+  
+  .logo-circle {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .logo-image {
+    width: 45px;
+    height: 45px;
+  }
+  
+  .logo-text h1 {
+    font-size: 0.9rem;
+  }
+  
+  .logo-text p {
+    font-size: 10px;
+  }
+  
+  .header-actions {
+    gap: 8px;
+  }
+  
+  .header-btn {
+    padding: 8px;
+    min-width: 44px;
+    gap: 4px;
+  }
+  
+  .header-btn-text {
+    display: none;
+  }
+  
+  .sign-out-btn {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* Very small mobile */
+@media (max-width: 480px) {
+  .logo-text {
+    display: none;
+  }
+}

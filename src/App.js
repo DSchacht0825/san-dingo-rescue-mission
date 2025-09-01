@@ -11,14 +11,13 @@
  * License: See LICENSE.md for usage terms
  */
 
-import React, { useState, useEffect, useRef } from "react";
-import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Upload } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Download, Bell, BellOff } from "lucide-react";
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
-// import { uploadToCloudinary, saveToLocalStorage } from "./uploadHelper";
-// import { SimpleProfileUpload } from "./SimpleUpload";
-import { CloudinaryUpload } from "./CloudinaryOnly";
+import { PureUpload } from "./PureUpload";
+import "./ResponsiveHeader.css";
 
 function App() {
   const [currentView, setCurrentView] = useState("auth");
@@ -49,6 +48,14 @@ function App() {
   
   // Profile picture state
   const [uploading, setUploading] = useState(false);
+  
+  // PWA Installation state
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallButton, setShowInstallButton] = useState(false);
+  
+  // Push Notifications state
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   // const fileInputRef = useRef(null); // Removed - not needed with SimpleUpload
   
   // Statistics state
@@ -219,7 +226,7 @@ function App() {
       
       const q = query(
         collection(db, "posts"),
-        orderBy("createdAt", "asc")
+        orderBy("createdAt", "desc")
       );
       
       const querySnapshot = await getDocs(q);
@@ -327,7 +334,8 @@ function App() {
     name: "",
     email: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    subscribeNewsletter: true
   });
 
   // Load posts and statistics when user logs in
@@ -338,6 +346,134 @@ function App() {
     }
   }, [currentView, currentUser.email]);
 
+  // PWA Installation setup
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallButton(true);
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setShowInstallButton(false);
+      console.log('PWA was installed');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // For Safari/iOS - always show button since there's no beforeinstallprompt
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches;
+    
+    if (isIOS && !isInStandaloneMode) {
+      setShowInstallButton(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  // Handle PWA installation
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      // For Chrome/Android - use the deferred prompt
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+        setDeferredPrompt(null);
+        setShowInstallButton(false);
+      }
+    } else {
+      // For Safari/iOS - show instructions
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isIOS) {
+        alert('To install this app on your iOS device:\n\n1. Tap the Share button (box with arrow)\n2. Scroll down and tap "Add to Home Screen"\n3. Tap "Add" to confirm');
+      } else {
+        alert('To install this app:\n\nDesktop: Look for the install icon in your address bar\nMobile: Open in Chrome and look for "Add to Home Screen" in the menu');
+      }
+    }
+  };
+
+  // Push Notifications setup
+  useEffect(() => {
+    // Check if notifications are supported
+    if ('Notification' in window && 'serviceWorker' in navigator) {
+      // Check current permission status
+      if (Notification.permission === 'granted') {
+        setNotificationsEnabled(true);
+        subscribeToNotifications();
+      } else if (Notification.permission === 'default') {
+        // Show prompt to user after they're logged in
+        if (currentUser.email) {
+          setTimeout(() => {
+            setShowNotificationPrompt(true);
+          }, 5000); // Show after 5 seconds of being logged in
+        }
+      }
+    }
+  }, [currentUser.email]);
+
+  // Subscribe to push notifications
+  const subscribeToNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: 'BEl62iUYgUivyDojlY_U5B7s-8jNxN7oYBQq1UuE2-7V3QqY8hQ6GGlYkHiSULNhgHa4s9rWVq8qRLyL5K8QhAA' // You'll need to generate this
+      });
+
+      console.log('Push subscription:', subscription);
+      
+      // Save subscription to Firestore for sending notifications
+      await addDoc(collection(db, 'push_subscriptions'), {
+        subscription: subscription.toJSON(),
+        userEmail: currentUser.email,
+        createdAt: serverTimestamp(),
+        isActive: true
+      });
+
+      setNotificationsEnabled(true);
+      setShowNotificationPrompt(false);
+    } catch (error) {
+      console.error('Failed to subscribe to push notifications:', error);
+    }
+  };
+
+  // Request notification permission
+  const requestNotificationPermission = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      
+      if (permission === 'granted') {
+        subscribeToNotifications();
+      } else {
+        setShowNotificationPrompt(false);
+        console.log('Notification permission denied');
+      }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+    }
+  };
+
+  // Send a test notification (for demo purposes)
+  const sendTestNotification = () => {
+    if (notificationsEnabled) {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.showNotification('SDRM Community', {
+          body: 'Welcome to the San Diego Rescue Mission Community! 🙏',
+          icon: '/sdrm-logo-192.png',
+          badge: '/sdrm-logo-192.png',
+          tag: 'welcome-notification'
+        });
+      });
+    }
+  };
 
   
   const [messages, setMessages] = useState([]);
@@ -425,9 +561,27 @@ function App() {
       setUserDatabase(newUserDatabase);
       console.log('Database size after:', Object.keys(newUserDatabase).length);
       
+      // Save to newsletter list if subscribed
+      if (formData.subscribeNewsletter) {
+        try {
+          await addDoc(collection(db, "newsletter_subscribers"), {
+            email: email,
+            name: name,
+            subscribedAt: serverTimestamp(),
+            createdAt: new Date(),
+            isActive: true,
+            source: "signup"
+          });
+          console.log('Added to newsletter list:', email);
+        } catch (error) {
+          console.error('Error adding to newsletter:', error);
+          // Don't block signup if newsletter fails
+        }
+      }
+      
       alert("Account created successfully! You can now sign in.");
       setAuthMode("login");
-      setFormData({ name: "", email: "", password: "", confirmPassword: "" });
+      setFormData({ name: "", email: "", password: "", confirmPassword: "", subscribeNewsletter: true });
       return;
     }
     
@@ -653,18 +807,80 @@ function App() {
 
 
 
-  // Profile Modal - Using CloudinaryUpload (100% isolated)
+  // Notification Permission Prompt
+  if (showNotificationPrompt) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0,0,0,0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000
+      }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)',
+          padding: '40px',
+          borderRadius: '20px',
+          maxWidth: '450px',
+          width: '90%',
+          textAlign: 'center',
+          color: 'white',
+          boxShadow: '0 25px 50px rgba(0,0,0,0.5)'
+        }}>
+          <Bell size={48} color="white" style={{ marginBottom: '20px' }} />
+          <h2 style={{ margin: '0 0 20px 0', fontSize: '1.5rem' }}>
+            Stay Connected with Your Community
+          </h2>
+          <p style={{ margin: '0 0 30px 0', fontSize: '16px', lineHeight: 1.5 }}>
+            Get notified when there are new posts, prayer requests, or community updates. 
+            You can change this setting anytime.
+          </p>
+          <div style={{ display: 'flex', gap: '15px', flexDirection: 'column' }}>
+            <button
+              onClick={requestNotificationPermission}
+              style={{
+                background: 'rgba(255,255,255,0.9)',
+                color: '#8B5CF6',
+                border: 'none',
+                padding: '15px 30px',
+                borderRadius: '10px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              🔔 Enable Notifications
+            </button>
+            <button
+              onClick={() => setShowNotificationPrompt(false)}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.3)',
+                padding: '12px 30px',
+                borderRadius: '10px',
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              Maybe Later
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Profile Modal - Using PureUpload (ZERO Firebase)
   if (showProfile) {
-    return <CloudinaryUpload 
-      user={currentUser}
+    return <PureUpload 
+      currentUser={currentUser}
       onSuccess={(url) => {
-        // Save URL to localStorage
-        const profiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
-        profiles[currentUser.email] = url;
-        localStorage.setItem('userProfiles', JSON.stringify(profiles));
-        
-        // Update current user
+        // Update current user state
         setCurrentUser(prev => ({ ...prev, profilePicture: url }));
+        setShowProfile(false);
       }}
       onClose={() => setShowProfile(false)}
     />;
@@ -777,51 +993,40 @@ function App() {
         background: 'linear-gradient(135deg, #004990 0%, #F5A01D 100%)',
         color: 'white'
       }}>
-        <header style={{
-          position: 'sticky',
-          top: 0,
-          background: 'linear-gradient(90deg, #004990 0%, #F5A01D 100%)',
-          backdropFilter: 'blur(10px)',
-          borderBottom: '1px solid rgba(255,255,255,0.2)',
-          padding: '20px',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-          zIndex: 50
-        }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <header className="header-container">
+          <div className="header-content">
             {/* Logo Section */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '100px',
-                height: '100px',
-                background: 'white',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-              }}>
+            <div className="logo-section">
+              <div className="logo-circle">
                 <img 
                   src="/SDRMLogo2016-3.svg" 
                   alt="SDRM Logo" 
-                  style={{
-                    width: '80px',
-                    height: '80px',
-                    objectFit: 'contain'
-                  }}
+                  className="logo-image"
                 />
               </div>
-              <div>
-                <h1 style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white', margin: 0, textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
-                  SAN DIEGO RESCUE MISSION
-                </h1>
-                <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', margin: 0 }}>
-                  One Life at a Time
-                </p>
+              <div className="logo-text">
+                <h1>SAN DIEGO RESCUE MISSION</h1>
+                <p>One Life at a Time</p>
               </div>
             </div>
             
             {/* Right Side Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div className="header-actions">
+
+              {/* PWA Install Button */}
+              {showInstallButton && (
+                <button
+                  onClick={handleInstallClick}
+                  className="header-btn"
+                  style={{
+                    background: 'linear-gradient(45deg, #10B981, #34D399)',
+                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+                  }}
+                >
+                  <Download size={16} color="white" />
+                  <span className="header-btn-text">Install App</span>
+                </button>
+              )}
 
               {/* Journal Button */}
               <button
@@ -831,79 +1036,69 @@ function App() {
                     loadJournalEntries(); // Refresh entries when opening
                   }
                 }}
+                className="header-btn"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: showJournaling ? 'rgba(245, 160, 29, 0.3)' : 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.3s',
-                  backdropFilter: 'blur(10px)'
+                  background: showJournaling ? 'rgba(245, 160, 29, 0.3)' : 'rgba(255,255,255,0.2)'
                 }}
               >
                 <BookOpen size={16} color="white" />
-                <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Journal</span>
+                <span className="header-btn-text">Journal</span>
+              </button>
+
+              {/* Notifications Button */}
+              <button
+                onClick={notificationsEnabled ? sendTestNotification : requestNotificationPermission}
+                className="header-btn"
+                style={{
+                  background: notificationsEnabled 
+                    ? 'linear-gradient(45deg, #8B5CF6, #A78BFA)' 
+                    : 'rgba(255,255,255,0.2)',
+                  boxShadow: notificationsEnabled ? '0 2px 10px rgba(139, 92, 246, 0.3)' : 'none'
+                }}
+                title={notificationsEnabled ? 'Send test notification' : 'Enable notifications'}
+              >
+                {notificationsEnabled ? <Bell size={16} color="white" /> : <BellOff size={16} color="white" />}
+                <span className="header-btn-text">
+                  {notificationsEnabled ? 'Notifications' : 'Enable Alerts'}
+                </span>
               </button>
 
               {/* Help Button for all users */}
               <button
                 onClick={() => setShowHelpModal(true)}
+                className="header-btn"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
                   background: 'linear-gradient(45deg, #EF4444, #F87171)',
-                  border: 'none',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  backdropFilter: 'blur(10px)',
                   boxShadow: '0 2px 10px rgba(239, 68, 68, 0.3)'
                 }}
               >
                 <HelpCircle size={16} color="white" />
-                <span style={{ color: 'white', fontSize: '14px', fontWeight: '500', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Need Help?</span>
+                <span className="header-btn-text">Need Help?</span>
               </button>
 
               {currentUser.isAdmin && (
                 <>
                   <button
                     onClick={() => setShowAdminDashboard(true)}
+                    className="header-btn"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
                       background: 'linear-gradient(45deg, #F5A01D, #FDB44B)',
                       border: '2px solid rgba(255,255,255,0.3)',
-                      padding: '10px 16px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      backdropFilter: 'blur(10px)',
                       boxShadow: '0 4px 15px rgba(245, 160, 29, 0.3)'
                     }}
                   >
                     <Shield size={16} color="white" />
-                    <span style={{ color: 'white', fontSize: '14px', fontWeight: 'bold', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Admin Dashboard</span>
+                    <span className="header-btn-text" style={{ fontWeight: 'bold' }}>Admin Dashboard</span>
                   </button>
                   <button
                     onClick={() => setShowAdminPanel(true)}
+                    className="header-btn"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: 'rgba(255,255,255,0.2)',
-                      border: 'none',
-                      padding: '10px 16px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      backdropFilter: 'blur(10px)'
+                      background: 'rgba(255,255,255,0.2)'
                     }}
                   >
                     <Megaphone size={16} color="white" />
-                    <span style={{ color: 'white', fontSize: '14px', display: window.innerWidth > 768 ? 'inline' : 'none' }}>Announce</span>
+                    <span className="header-btn-text">Announce</span>
                   </button>
                 </>
               )}
@@ -944,17 +1139,9 @@ function App() {
               {/* Sign Out Button */}
               <button 
                 onClick={() => setCurrentView("auth")}
+                className="header-btn sign-out-btn"
                 style={{
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  color: 'white',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.3s',
-                  backdropFilter: 'blur(10px)'
+                  background: 'rgba(255,255,255,0.2)'
                 }}
               >
                 Sign Out

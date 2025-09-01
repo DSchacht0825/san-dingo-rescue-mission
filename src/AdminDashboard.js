@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   FileText,
   HelpCircle,
-  CheckCircle
+  CheckCircle,
+  Mail
 } from 'lucide-react';
 import { db } from './firebase';
 import { collection, getDocs, query, doc, setDoc, deleteDoc, getDoc, orderBy } from 'firebase/firestore';
@@ -453,6 +454,19 @@ const AdminDashboard = ({ currentUser, onClose }) => {
           csvData += `"${date.toLocaleDateString()}","${(post.userName || 'Unknown').replace(/"/g, '""')}","${post.userEmail || ''}","${post.type || 'post'}","${(post.text || '').replace(/"/g, '""').substring(0, 200)}","${post.likes || 0}"\n`;
         });
         fileName = `sdrm-posts-${new Date().toISOString().split('T')[0]}.csv`;
+      }
+
+      if (dataType === 'newsletter') {
+        // Get newsletter subscribers from Firestore
+        const subscribersSnapshot = await getDocs(collection(db, 'newsletter_subscribers'));
+        const subscribers = subscribersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        csvData = 'Name,Email,Subscribed Date,Source,Status\n';
+        subscribers.forEach(sub => {
+          const date = sub.subscribedAt?.toDate?.() || new Date(sub.createdAt || Date.now());
+          csvData += `"${(sub.name || '').replace(/"/g, '""')}","${sub.email}","${date.toLocaleDateString()}","${sub.source || 'signup'}","${sub.isActive ? 'Active' : 'Inactive'}"\n`;
+        });
+        fileName = `sdrm-newsletter-emails-${new Date().toISOString().split('T')[0]}.csv`;
       }
 
       // Create and download CSV file
@@ -968,6 +982,39 @@ const AdminDashboard = ({ currentUser, onClose }) => {
                 >
                   <Download size={16} />
                   Export Users CSV
+                </button>
+              </div>
+
+              <div style={{
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '12px',
+                padding: '20px',
+                textAlign: 'center'
+              }}>
+                <Mail size={32} color="#F5A01D" style={{marginBottom: '16px'}} />
+                <h4 style={{margin: '0 0 8px 0'}}>Newsletter Emails</h4>
+                <p style={{fontSize: '14px', opacity: 0.8, margin: '0 0 16px 0'}}>
+                  Export email addresses for monthly newsletter
+                </p>
+                <button
+                  onClick={() => handleExport('newsletter')}
+                  disabled={loading}
+                  style={{
+                    background: '#F5A01D',
+                    border: 'none',
+                    color: 'white',
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    margin: '0 auto'
+                  }}
+                >
+                  <Download size={16} />
+                  Export Email List
                 </button>
               </div>
             </div>

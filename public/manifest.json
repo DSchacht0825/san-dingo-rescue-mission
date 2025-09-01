@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "SDRM Community",
+  "name": "San Diego Rescue Mission Community",
+  "description": "One Life at a Time - Connect, share, and grow in faith together",
   "icons": [
     {
       "src": "favicon.ico",
@@ -8,18 +9,24 @@
       "type": "image/x-icon"
     },
     {
-      "src": "logo192.png",
+      "src": "sdrm-logo-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "maskable any"
     },
     {
-      "src": "logo512.png",
+      "src": "sdrm-logo-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "maskable any"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "orientation": "portrait",
+  "theme_color": "#004990",
+  "background_color": "#004990",
+  "categories": ["lifestyle", "social", "productivity"],
+  "lang": "en-US",
+  "scope": "/"
 }
