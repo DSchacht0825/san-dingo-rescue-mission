@@ -14,7 +14,7 @@
 import React, { useState, useEffect } from "react";
 import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Download, Bell, BellOff } from "lucide-react";
 import { db } from "./firebase";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, startAfter } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
 import { PureUpload } from "./PureUpload";
 import "./ResponsiveHeader.css";
@@ -219,15 +219,28 @@ function App() {
 
 
 
-  // Load posts from Firestore
-  const loadPosts = async () => {
+  // Load posts from Firestore with pagination
+  const loadPosts = async (loadMore = false) => {
     try {
-      console.log("Loading posts from Firestore...");
+      console.log(loadMore ? "Loading more posts..." : "Loading initial posts...");
       
-      const q = query(
-        collection(db, "posts"),
-        orderBy("createdAt", "desc")
-      );
+      let q;
+      if (loadMore && lastPostDoc) {
+        // Load more posts starting after the last document
+        q = query(
+          collection(db, "posts"),
+          orderBy("createdAt", "desc"),
+          startAfter(lastPostDoc),
+          limit(POSTS_PER_PAGE)
+        );
+      } else {
+        // Load initial posts
+        q = query(
+          collection(db, "posts"),
+          orderBy("createdAt", "desc"),
+          limit(POSTS_PER_PAGE)
+        );
+      }
       
       const querySnapshot = await getDocs(q);
       const posts = [];
@@ -249,26 +262,52 @@ function App() {
         posts.push(post);
       });
       
-      console.log(`Loaded ${posts.length} posts from Firestore:`, posts);
-      setMessages(posts);
+      // Update last document for pagination
+      const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+      setLastPostDoc(lastVisible);
+      
+      // Check if there are more posts to load
+      setHasMorePosts(querySnapshot.docs.length === POSTS_PER_PAGE);
+      
+      if (loadMore) {
+        // Append new posts to existing ones
+        setMessages(prevMessages => [...prevMessages, ...posts]);
+        console.log(`Loaded ${posts.length} more posts. Total: ${messages.length + posts.length}`);
+      } else {
+        // Replace all posts (initial load)
+        setMessages(posts);
+        console.log(`Loaded ${posts.length} initial posts from Firestore`);
+      }
+      
     } catch (error) {
       console.error("Error loading posts:", error);
-      // Set some default posts if there's an error loading
-      setMessages([
-        {
-          id: "default-1",
-          user: "Admin",
-          message: "🌟 Welcome to San Diego Rescue Mission Community! This is a safe space for support, encouragement, and fellowship. Please be kind and supportive to one another.",
-          time: "Today",
-          type: "admin_announcement",
-          profilePicture: null,
-          likes: 0,
-          loved: false,
-          replies: [],
-          isAdmin: true
-        }
-      ]);
+      if (!loadMore) {
+        // Set default posts only on initial load error
+        setMessages([
+          {
+            id: "default-1",
+            user: "Admin",
+            message: "🌟 Welcome to San Diego Rescue Mission Community! This is a safe space for support, encouragement, and fellowship. Please be kind and supportive to one another.",
+            time: "Today",
+            type: "admin_announcement",
+            profilePicture: null,
+            likes: 0,
+            loved: false,
+            replies: [],
+            isAdmin: true
+          }
+        ]);
+      }
     }
+  };
+
+  // Load more posts function
+  const loadMorePosts = async () => {
+    if (!hasMorePosts || loadingMore) return;
+    
+    setLoadingMore(true);
+    await loadPosts(true);
+    setLoadingMore(false);
   };
 
   // Load statistics from Firestore
@@ -345,6 +384,51 @@ function App() {
       loadStatistics();
     }
   }, [currentView, currentUser.email]);
+
+  // Session timeout - auto logout after 2 hours of inactivity
+  useEffect(() => {
+    if (currentView === "chat") {
+      // Update activity timestamp on any user action
+      const updateActivity = () => {
+        localStorage.setItem('lastActivity', Date.now().toString());
+      };
+      
+      // Set initial activity
+      updateActivity();
+      
+      // Track user activity
+      window.addEventListener('click', updateActivity);
+      window.addEventListener('keydown', updateActivity);
+      window.addEventListener('scroll', updateActivity);
+      
+      // Check for timeout every 5 minutes
+      const timeoutCheck = setInterval(() => {
+        const lastActivity = localStorage.getItem('lastActivity');
+        const twoHours = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+        
+        if (lastActivity && Date.now() - parseInt(lastActivity) > twoHours) {
+          alert("Your session has expired for security. Please log in again.");
+          setCurrentView("auth");
+          // Clear user data
+          setCurrentUser({
+            name: "You",
+            email: "",
+            profilePicture: null,
+            isAdmin: false,
+            bio: ""
+          });
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+      
+      // Cleanup
+      return () => {
+        window.removeEventListener('click', updateActivity);
+        window.removeEventListener('keydown', updateActivity);
+        window.removeEventListener('scroll', updateActivity);
+        clearInterval(timeoutCheck);
+      };
+    }
+  }, [currentView]);
 
   // PWA Installation setup
   useEffect(() => {
@@ -477,6 +561,10 @@ function App() {
 
   
   const [messages, setMessages] = useState([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [lastPostDoc, setLastPostDoc] = useState(null);
+  const POSTS_PER_PAGE = 25;
   
   const [newMessage, setNewMessage] = useState("");
   const [messageType, setMessageType] = useState("post");
@@ -730,8 +818,10 @@ function App() {
         isAdmin: currentUser.isAdmin
       });
       
-      // Reload posts and statistics after new post
-      loadPosts();
+      // Reset pagination and reload posts after new post
+      setLastPostDoc(null);
+      setHasMorePosts(true);
+      loadPosts(false); // Load initial posts (reset pagination)
       loadStatistics();
       setNewMessage("");
       alert("Post shared successfully!");
@@ -1450,6 +1540,29 @@ function App() {
                 </div>
               ))}
             </div>
+
+            {/* Load More Posts Button */}
+            {hasMorePosts && (
+              <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                <button
+                  onClick={loadMorePosts}
+                  disabled={loadingMore}
+                  style={{
+                    background: loadingMore ? 'rgba(245, 160, 29, 0.5)' : '#F5A01D',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '12px 24px',
+                    color: 'white',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: loadingMore ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  {loadingMore ? 'Loading more posts...' : 'Load More Posts'}
+                </button>
+              </div>
+            )}
 
           </div>
 
