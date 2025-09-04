@@ -12,11 +12,16 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Heart, User, Eye, EyeOff, Send, Star, Users, BookOpen, MessageCircle, Reply, Shield, Megaphone, HelpCircle, Download, Bell, BellOff } from "lucide-react";
+import { Eye, EyeOff, Bell, BellOff } from "lucide-react";
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, startAfter } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
 import { PureUpload } from "./PureUpload";
+import Header from "./components/Header";
+import DailyVerse from "./components/DailyVerse";
+import PostForm from "./components/PostForm";
+import PostList from "./components/PostList";
+import Statistics from "./components/Statistics";
 import "./ResponsiveHeader.css";
 
 function App() {
@@ -1083,267 +1088,34 @@ function App() {
         background: 'linear-gradient(135deg, #004990 0%, #F5A01D 100%)',
         color: 'white'
       }}>
-        <header className="header-container">
-          <div className="header-content">
-            {/* Logo Section */}
-            <div className="logo-section">
-              <div className="logo-circle">
-                <img 
-                  src="/SDRMLogo2016-3.svg" 
-                  alt="SDRM Logo" 
-                  className="logo-image"
-                />
-              </div>
-              <div className="logo-text">
-                <h1>SAN DIEGO RESCUE MISSION</h1>
-                <p>One Life at a Time</p>
-              </div>
-            </div>
-            
-            {/* Right Side Actions */}
-            <div className="header-actions">
-
-              {/* PWA Install Button */}
-              {showInstallButton && (
-                <button
-                  onClick={handleInstallClick}
-                  className="header-btn"
-                  style={{
-                    background: 'linear-gradient(45deg, #10B981, #34D399)',
-                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
-                  }}
-                >
-                  <Download size={16} color="white" />
-                  <span className="header-btn-text">Install App</span>
-                </button>
-              )}
-
-              {/* Journal Button */}
-              <button
-                onClick={() => {
-                  setShowJournaling(!showJournaling);
-                  if (!showJournaling) {
-                    loadJournalEntries(); // Refresh entries when opening
-                  }
-                }}
-                className="header-btn"
-                style={{
-                  background: showJournaling ? 'rgba(245, 160, 29, 0.3)' : 'rgba(255,255,255,0.2)'
-                }}
-              >
-                <BookOpen size={16} color="white" />
-                <span className="header-btn-text">Journal</span>
-              </button>
-
-              {/* Notifications Button */}
-              <button
-                onClick={notificationsEnabled ? sendTestNotification : requestNotificationPermission}
-                className="header-btn"
-                style={{
-                  background: notificationsEnabled 
-                    ? 'linear-gradient(45deg, #8B5CF6, #A78BFA)' 
-                    : 'rgba(255,255,255,0.2)',
-                  boxShadow: notificationsEnabled ? '0 2px 10px rgba(139, 92, 246, 0.3)' : 'none'
-                }}
-                title={notificationsEnabled ? 'Send test notification' : 'Enable notifications'}
-              >
-                {notificationsEnabled ? <Bell size={16} color="white" /> : <BellOff size={16} color="white" />}
-                <span className="header-btn-text">
-                  {notificationsEnabled ? 'Notifications' : 'Enable Alerts'}
-                </span>
-              </button>
-
-              {/* Help Button for all users */}
-              <button
-                onClick={() => setShowHelpModal(true)}
-                className="header-btn"
-                style={{
-                  background: 'linear-gradient(45deg, #EF4444, #F87171)',
-                  boxShadow: '0 2px 10px rgba(239, 68, 68, 0.3)'
-                }}
-              >
-                <HelpCircle size={16} color="white" />
-                <span className="header-btn-text">Need Help?</span>
-              </button>
-
-              {currentUser.isAdmin && (
-                <>
-                  <button
-                    onClick={() => setShowAdminDashboard(true)}
-                    className="header-btn"
-                    style={{
-                      background: 'linear-gradient(45deg, #F5A01D, #FDB44B)',
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      boxShadow: '0 4px 15px rgba(245, 160, 29, 0.3)'
-                    }}
-                  >
-                    <Shield size={16} color="white" />
-                    <span className="header-btn-text" style={{ fontWeight: 'bold' }}>Admin Dashboard</span>
-                  </button>
-                  <button
-                    onClick={() => setShowAdminPanel(true)}
-                    className="header-btn"
-                    style={{
-                      background: 'rgba(255,255,255,0.2)'
-                    }}
-                  >
-                    <Megaphone size={16} color="white" />
-                    <span className="header-btn-text">Announce</span>
-                  </button>
-                </>
-              )}
-              
-              {/* User Profile */}
-              <div 
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: currentUser.profilePicture ? 'transparent' : 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.3s',
-                  overflow: 'hidden',
-                  border: currentUser.profilePicture ? '2px solid rgba(255,255,255,0.3)' : 'none'
-                }}
-                onClick={() => setShowProfile(true)}
-              >
-                {currentUser.profilePicture ? (
-                  <img 
-                    src={currentUser.profilePicture} 
-                    alt="Profile" 
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover'
-                    }}
-                  />
-                ) : (
-                  <User size={20} color="white" />
-                )}
-              </div>
-              
-              {/* Sign Out Button */}
-              <button 
-                onClick={() => setCurrentView("auth")}
-                className="header-btn sign-out-btn"
-                style={{
-                  background: 'rgba(255,255,255,0.2)'
-                }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </header>
+        <Header 
+          currentUser={currentUser}
+          showInstallButton={showInstallButton}
+          handleInstallClick={handleInstallClick}
+          showJournaling={showJournaling}
+          setShowJournaling={setShowJournaling}
+          loadJournalEntries={loadJournalEntries}
+          notificationsEnabled={notificationsEnabled}
+          sendTestNotification={sendTestNotification}
+          requestNotificationPermission={requestNotificationPermission}
+          setShowHelpModal={setShowHelpModal}
+          setShowAdminDashboard={setShowAdminDashboard}
+          setShowAdminPanel={setShowAdminPanel}
+          setShowProfile={setShowProfile}
+          setCurrentView={setCurrentView}
+        />
 
         <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '20px' }}>
-          {/* Daily Encouragement Section */}
-          <div style={{
-            marginBottom: '20px',
-            background: 'linear-gradient(90deg, rgba(245, 160, 29, 0.3) 0%, rgba(0, 73, 144, 0.3) 100%)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: '12px',
-            border: '1px solid rgba(245, 160, 29, 0.2)',
-            padding: '20px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <BookOpen size={24} color="#F5A01D" style={{ marginTop: '4px' }} />
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <h3 style={{ fontWeight: '600', color: '#F5A01D', margin: 0 }}>Daily Encouragement</h3>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                    {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                  </span>
-                </div>
-                <p style={{ color: 'rgba(255,255,255,0.9)', fontStyle: 'italic', marginBottom: '8px', margin: 0 }}>"{todaysVerse.text}"</p>
-                <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', margin: 0 }}>- {todaysVerse.reference}</p>
-              </div>
-            </div>
-          </div>
+          <DailyVerse todaysVerse={todaysVerse} />
 
-          {/* Community Sharing Section */}
-          <div style={{
-            marginBottom: '20px',
-            background: 'rgba(0,0,0,0.2)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: '20px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            padding: '30px'
-          }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'white', marginBottom: '20px' }}>Share with the Community</h2>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>What would you like to share?</span>
-              <select
-                value={messageType}
-                onChange={(e) => setMessageType(e.target.value)}
-                style={{
-                  background: 'rgba(100,100,100,0.3)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '8px',
-                  padding: '4px 8px',
-                  color: 'white',
-                  fontSize: '14px'
-                }}
-              >
-                <option value="post">💬 Post</option>
-                <option value="prayer_request">🙏 Prayer Request</option>
-                <option value="praise_report">⭐ Praise Report</option>
-                <option value="encouragement">💝 Encouragement</option>
-              </select>
-            </div>
-
-            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '8px' }}>
-              <textarea
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={
-                  messageType === "prayer_request" 
-                    ? "Share what you need prayer for..."
-                    : messageType === "praise_report"
-                    ? "Share how God has blessed you..."
-                    : messageType === "encouragement"
-                    ? "Share some encouragement with the community..."
-                    : "What's on your heart today? Share with your community..."
-                }
-                style={{
-                  flex: 1,
-                  background: 'rgba(100,100,100,0.3)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  color: 'white',
-                  fontSize: '16px',
-                  resize: 'none',
-                  height: '80px'
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
-                  }
-                }}
-              />
-              <button 
-                type="submit"
-                disabled={saving}
-                style={{
-                  background: saving ? 'rgba(245, 160, 29, 0.5)' : '#F5A01D',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  alignSelf: 'flex-end'
-                }}
-              >
-                <Send size={16} color="white" />
-              </button>
-            </form>
-          </div>
+          <PostForm
+            messageType={messageType}
+            setMessageType={setMessageType}
+            newMessage={newMessage}
+            setNewMessage={setNewMessage}
+            handleSendMessage={handleSendMessage}
+            saving={saving}
+          />
 
           <div style={{
             background: 'rgba(0,0,0,0.2)',
