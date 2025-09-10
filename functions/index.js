@@ -21,9 +21,28 @@ const ADMIN_EMAILS = [
   'dschacht@sdrescue.org'
 ];
 
-// Helper function to check if user is admin
-const isAdmin = (email) => {
-  return ADMIN_EMAILS.includes(email.toLowerCase());
+// Helper function to check if user is admin (checks both static and Firestore lists)
+const isAdmin = async (email) => {
+  const emailLower = email.toLowerCase();
+  
+  // First check if user is a super admin
+  if (ADMIN_EMAILS.includes(emailLower)) {
+    return true;
+  }
+
+  // Then check Firestore admin list
+  try {
+    const adminDoc = await db.collection('settings').doc('admins').get();
+    if (adminDoc.exists) {
+      const adminData = adminDoc.data();
+      const adminList = adminData.admins || [];
+      return adminList.some(admin => admin.email.toLowerCase() === emailLower);
+    }
+  } catch (error) {
+    logger.error('Error checking admin status:', error);
+  }
+
+  return false;
 };
 
 // HTTP endpoint for admin reports (publicly accessible but secured by email check)
@@ -35,7 +54,7 @@ exports.getAdminReportHttp = onRequest({ cors: true }, async (req, res) => {
     console.log('Admin report requested for:', userEmail);
     
     // Check admin privileges
-    if (!userEmail || !isAdmin(userEmail)) {
+    if (!userEmail || !(await isAdmin(userEmail))) {
       console.log('Admin access denied for:', userEmail);
       res.status(403).json({ error: 'Admin access required' });
       return;
@@ -56,7 +75,7 @@ exports.generateAdminReport = onCall(async (request) => {
   const { userEmail } = request.data;
   
   // Check admin privileges
-  if (!userEmail || !isAdmin(userEmail)) {
+  if (!userEmail || !(await isAdmin(userEmail))) {
     throw new HttpsError('permission-denied', 'Admin access required');
   }
 
@@ -163,7 +182,7 @@ const generateReportData = async (userEmail) => {
 exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail } = request.data;
   
-  if (!userEmail || !isAdmin(userEmail)) {
+  if (!userEmail || !(await isAdmin(userEmail))) {
     throw new HttpsError('permission-denied', 'Admin access required');
   }
 
@@ -179,7 +198,7 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
     const userStats = new Map();
 
     // Process posts
-    postsSnapshot.docs.forEach(doc => {
+    for (const doc of postsSnapshot.docs) {
       const post = doc.data();
       if (post.userEmail) {
         if (!userStats.has(post.userEmail)) {
@@ -189,7 +208,7 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
             posts: 0,
             journalEntries: 0,
             lastActivity: null,
-            isAdmin: isAdmin(post.userEmail)
+            isAdmin: await isAdmin(post.userEmail)
           });
         }
         
@@ -201,10 +220,10 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
           user.lastActivity = postDate;
         }
       }
-    });
+    }
 
     // Process journal entries
-    journalSnapshot.docs.forEach(doc => {
+    for (const doc of journalSnapshot.docs) {
       const entry = doc.data();
       if (entry.userEmail) {
         if (!userStats.has(entry.userEmail)) {
@@ -214,7 +233,7 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
             posts: 0,
             journalEntries: 0,
             lastActivity: null,
-            isAdmin: isAdmin(entry.userEmail)
+            isAdmin: await isAdmin(entry.userEmail)
           });
         }
         
@@ -226,7 +245,7 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
           user.lastActivity = entryDate;
         }
       }
-    });
+    }
 
     // Convert to array and sort by last activity
     const users = Array.from(userStats.values())
@@ -255,7 +274,7 @@ exports.getUserList = onCall({ invoker: 'public' }, async (request) => {
 exports.exportData = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail, dataType } = request.data;
   
-  if (!userEmail || !isAdmin(userEmail)) {
+  if (!userEmail || !(await isAdmin(userEmail))) {
     throw new HttpsError('permission-denied', 'Admin access required');
   }
 
@@ -327,17 +346,17 @@ exports.exportData = onCall({ invoker: 'public' }, async (request) => {
         }
       });
 
-      userStats.forEach(user => {
+      for (const [email, user] of userStats) {
         const csvRow = [
           `"${user.name.replace(/"/g, '""')}"`,
           user.email,
           user.posts,
           user.journalEntries,
           user.lastActivity ? user.lastActivity.split('T')[0] : '',
-          isAdmin(user.email) ? 'Yes' : 'No'
+          (await isAdmin(user.email)) ? 'Yes' : 'No'
         ].join(',');
         csvData += csvRow + '\n';
-      });
+      }
     }
 
     logger.info(`Data export completed for ${dataType}`);
@@ -353,7 +372,7 @@ exports.exportData = onCall({ invoker: 'public' }, async (request) => {
 exports.moderateContent = onCall({ invoker: 'public' }, async (request) => {
   const { userEmail, action, contentId, contentType } = request.data;
   
-  if (!userEmail || !isAdmin(userEmail)) {
+  if (!userEmail || !(await isAdmin(userEmail))) {
     throw new HttpsError('permission-denied', 'Admin access required');
   }
 
@@ -379,6 +398,111 @@ exports.moderateContent = onCall({ invoker: 'public' }, async (request) => {
   } catch (error) {
     logger.error('Error moderating content:', error);
     throw new HttpsError('internal', 'Failed to moderate content');
+  }
+});
+
+// Add admin function - manages both Firestore and ensures user gets admin privileges
+exports.addAdmin = onCall(async (request) => {
+  const { userEmail, newAdminEmail } = request.data;
+  
+  if (!userEmail || !(await isAdmin(userEmail))) {
+    throw new HttpsError('permission-denied', 'Admin access required');
+  }
+
+  try {
+    logger.info(`Admin ${userEmail} adding new admin: ${newAdminEmail}`);
+
+    const emailToAdd = newAdminEmail.toLowerCase().trim();
+    
+    // Check if already a super admin
+    if (ADMIN_EMAILS.includes(emailToAdd)) {
+      throw new HttpsError('already-exists', 'This user is already a super admin');
+    }
+
+    // Get current admin list
+    const adminDoc = await db.collection('settings').doc('admins').get();
+    const currentAdmins = adminDoc.exists ? adminDoc.data().admins || [] : [];
+    
+    // Check if already in admin list
+    if (currentAdmins.some(admin => admin.email.toLowerCase() === emailToAdd)) {
+      throw new HttpsError('already-exists', 'This user is already an admin');
+    }
+
+    // Add to admin list
+    const newAdmin = {
+      email: emailToAdd,
+      addedBy: userEmail,
+      addedAt: new Date().toISOString(),
+      name: 'New Admin'
+    };
+
+    const updatedAdmins = [...currentAdmins, newAdmin];
+    
+    // Save to Firestore
+    await db.collection('settings').doc('admins').set({
+      admins: updatedAdmins,
+      lastModified: new Date().toISOString(),
+      modifiedBy: userEmail
+    });
+
+    logger.info(`Successfully added admin: ${emailToAdd}`);
+    return { success: true, admin: newAdmin };
+
+  } catch (error) {
+    logger.error('Error adding admin:', error);
+    throw new HttpsError('internal', `Failed to add admin: ${error.message}`);
+  }
+});
+
+// Remove admin function
+exports.removeAdmin = onCall(async (request) => {
+  const { userEmail, adminEmailToRemove } = request.data;
+  
+  if (!userEmail || !(await isAdmin(userEmail))) {
+    throw new HttpsError('permission-denied', 'Admin access required');
+  }
+
+  try {
+    logger.info(`Admin ${userEmail} removing admin: ${adminEmailToRemove}`);
+
+    const emailToRemove = adminEmailToRemove.toLowerCase().trim();
+    
+    // Check if trying to remove super admin
+    if (ADMIN_EMAILS.includes(emailToRemove)) {
+      throw new HttpsError('permission-denied', 'Cannot remove super admin');
+    }
+
+    // Check if trying to remove self
+    if (emailToRemove === userEmail.toLowerCase()) {
+      throw new HttpsError('permission-denied', 'Cannot remove yourself');
+    }
+
+    // Get current admin list
+    const adminDoc = await db.collection('settings').doc('admins').get();
+    if (!adminDoc.exists) {
+      throw new HttpsError('not-found', 'No admin list found');
+    }
+
+    const currentAdmins = adminDoc.data().admins || [];
+    const updatedAdmins = currentAdmins.filter(admin => admin.email.toLowerCase() !== emailToRemove);
+    
+    if (updatedAdmins.length === currentAdmins.length) {
+      throw new HttpsError('not-found', 'Admin not found in list');
+    }
+    
+    // Save updated list to Firestore
+    await db.collection('settings').doc('admins').set({
+      admins: updatedAdmins,
+      lastModified: new Date().toISOString(),
+      modifiedBy: userEmail
+    });
+
+    logger.info(`Successfully removed admin: ${emailToRemove}`);
+    return { success: true, removedEmail: emailToRemove };
+
+  } catch (error) {
+    logger.error('Error removing admin:', error);
+    throw new HttpsError('internal', `Failed to remove admin: ${error.message}`);
   }
 });
 

@@ -209,7 +209,11 @@ const AdminDashboard = ({ currentUser, onClose, updateCurrentUserAdmin }) => {
         updateCurrentUserAdmin(true);
         alert(`Admin privileges granted to ${emailToAdd}. You now have admin access!`);
       } else {
-        alert(`Admin privileges granted to ${emailToAdd}. The user will see admin features after refreshing the page or logging in again.`);
+        // Trigger immediate database update for other users
+        if (window.updateUserDatabase) {
+          window.updateUserDatabase(emailToAdd, { isAdmin: true });
+        }
+        alert(`Admin privileges granted to ${emailToAdd}. Admin can now log in with admin access!`);
       }
       
     } catch (error) {

@@ -644,6 +644,33 @@ function App() {
     }));
   };
 
+  // Function to update user database with new admin status
+  const updateUserDatabase = (email, updates) => {
+    setUserDatabase(prevDB => {
+      const newDB = { ...prevDB };
+      if (newDB[email]) {
+        newDB[email] = { ...newDB[email], ...updates };
+      } else {
+        // Create user entry if it doesn't exist
+        newDB[email] = {
+          password: 'temp123', // Temporary password - user should reset
+          name: 'New Admin',
+          isAdmin: updates.isAdmin || false,
+          ...updates
+        };
+      }
+      return newDB;
+    });
+  };
+
+  // Expose updateUserDatabase to window for AdminDashboard access
+  useEffect(() => {
+    window.updateUserDatabase = updateUserDatabase;
+    return () => {
+      delete window.updateUserDatabase;
+    };
+  }, [updateUserDatabase]);
+
   // Save userDatabase to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('userDatabase', JSON.stringify(userDatabase));
