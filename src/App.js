@@ -603,7 +603,9 @@ function App() {
   const initializeUserDatabase = () => {
     const saved = localStorage.getItem('userDatabase');
     if (saved) {
-      return JSON.parse(saved);
+      const db = JSON.parse(saved);
+      console.log('Loaded user database from localStorage:', Object.keys(db));
+      return db;
     }
     
     // Default accounts
@@ -676,11 +678,21 @@ function App() {
     });
   };
 
-  // Expose updateUserDatabase to window for AdminDashboard access
+  // Debug function to reset user database (temporary for testing)
+  const resetUserDatabase = () => {
+    console.log('Resetting user database...');
+    localStorage.removeItem('userDatabase');
+    setUserDatabase(initializeUserDatabase());
+    console.log('Database reset complete. Please refresh the page.');
+  };
+
+  // Expose updateUserDatabase and reset function to window for AdminDashboard access
   useEffect(() => {
     window.updateUserDatabase = updateUserDatabase;
+    window.resetUserDatabase = resetUserDatabase;
     return () => {
       delete window.updateUserDatabase;
+      delete window.resetUserDatabase;
     };
   }, [updateUserDatabase]);
 
