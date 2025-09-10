@@ -213,7 +213,7 @@ const AdminDashboard = ({ currentUser, onClose, updateCurrentUserAdmin }) => {
         if (window.updateUserDatabase) {
           window.updateUserDatabase(emailToAdd, { isAdmin: true });
         }
-        alert(`Admin privileges granted to ${emailToAdd}. Admin can now log in with admin access!`);
+        alert(`Admin privileges granted to ${emailToAdd}.\n\nIMPORTANT: If they don't have an account yet, they can login with:\nEmail: ${emailToAdd}\nPassword: temp123\n\nThey should change their password after first login.`);
       }
       
     } catch (error) {

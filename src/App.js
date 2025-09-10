@@ -77,7 +77,8 @@ function App() {
   const adminEmails = [
     "schacht.dan@gmail.com",
     "daniel@sdrescuemission.org",
-    "dschacht@sdrescue.org"
+    "dschacht@sdrescue.org",
+    "info@serenitycollective.org" // Added via admin dashboard
   ];
 
   // Function to check if user is admin (checks both static and Firestore admin lists)
@@ -626,6 +627,11 @@ function App() {
         password: "headshot123", 
         name: "Community Member",
         isAdmin: false 
+      },
+      "info@serenitycollective.org": { 
+        password: "temp123", 
+        name: "Serenity Collective Admin",
+        isAdmin: true 
       }
     };
     
@@ -650,6 +656,7 @@ function App() {
       const newDB = { ...prevDB };
       if (newDB[email]) {
         newDB[email] = { ...newDB[email], ...updates };
+        console.log('Updated existing user:', email, 'New status:', newDB[email]);
       } else {
         // Create user entry if it doesn't exist
         newDB[email] = {
@@ -658,7 +665,13 @@ function App() {
           isAdmin: updates.isAdmin || false,
           ...updates
         };
+        console.log('Created new admin user:', email, 'Account details:', newDB[email]);
       }
+      
+      // Immediately save to localStorage
+      localStorage.setItem('userDatabase', JSON.stringify(newDB));
+      console.log('Updated userDatabase saved to localStorage. Total users:', Object.keys(newDB).length);
+      
       return newDB;
     });
   };
@@ -746,7 +759,12 @@ function App() {
     }
     
     const user = userDatabase[email];
+    console.log('Login attempt for:', email);
+    console.log('User found in database:', user ? 'YES' : 'NO');
+    console.log('Available users in database:', Object.keys(userDatabase));
+    
     if (!user || user.password !== password) {
+      console.log('Login failed for:', email, 'User exists:', !!user, 'Password match:', user ? user.password === password : false);
       alert("Invalid email or password. Please try again.");
       return;
     }
