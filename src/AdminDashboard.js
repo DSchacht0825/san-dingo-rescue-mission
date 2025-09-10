@@ -25,7 +25,7 @@ import {
 import { db } from './firebase';
 import { collection, getDocs, query, doc, setDoc, deleteDoc, getDoc, orderBy } from 'firebase/firestore';
 
-const AdminDashboard = ({ currentUser, onClose }) => {
+const AdminDashboard = ({ currentUser, onClose, updateCurrentUserAdmin }) => {
   const [reports, setReports] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -203,6 +203,14 @@ const AdminDashboard = ({ currentUser, onClose }) => {
       setAdminList(updatedAdmins);
       setNewAdminEmail('');
       setError('');
+
+      // If updateCurrentUserAdmin function is provided and we're adding the current user as admin
+      if (updateCurrentUserAdmin && emailToAdd === currentUser.email.toLowerCase()) {
+        updateCurrentUserAdmin(true);
+        alert(`Admin privileges granted to ${emailToAdd}. You now have admin access!`);
+      } else {
+        alert(`Admin privileges granted to ${emailToAdd}. The user will see admin features after refreshing the page or logging in again.`);
+      }
       
     } catch (error) {
       setError(`Failed to add admin: ${error.message}`);
@@ -238,6 +246,14 @@ const AdminDashboard = ({ currentUser, onClose }) => {
 
       setAdminList(updatedAdmins);
       setError('');
+
+      // If updateCurrentUserAdmin function is provided and we're removing the current user's admin privileges
+      if (updateCurrentUserAdmin && emailToRemove.toLowerCase() === currentUser.email.toLowerCase()) {
+        updateCurrentUserAdmin(false);
+        alert(`Admin privileges removed from ${emailToRemove}. You no longer have admin access.`);
+      } else {
+        alert(`Admin privileges removed from ${emailToRemove}.`);
+      }
       
     } catch (error) {
       setError(`Failed to remove admin: ${error.message}`);

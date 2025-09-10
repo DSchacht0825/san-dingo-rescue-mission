@@ -12,9 +12,9 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Eye, EyeOff, Bell, BellOff } from "lucide-react";
+import { Eye, EyeOff, Bell, BellOff, Shield, Megaphone, User, Heart, MessageCircle, Reply, Star, Users, BookOpen, HelpCircle } from "lucide-react";
 import { db } from "./firebase";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, startAfter } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, startAfter, getDoc, doc } from "firebase/firestore";
 import AdminDashboard from "./AdminDashboard";
 import { PureUpload } from "./PureUpload";
 import Header from "./components/Header";
@@ -73,11 +73,34 @@ function App() {
   // Debug state initialization
   console.log("App component rendered, showPastEntries state:", showPastEntries);
   
-  // Admin emails
+  // Admin emails (super admins)
   const adminEmails = [
     "schacht.dan@gmail.com",
-    "daniel@sdrescuemission.org"
+    "daniel@sdrescuemission.org",
+    "dschacht@sdrescue.org"
   ];
+
+  // Function to check if user is admin (checks both static and Firestore admin lists)
+  const checkIsAdmin = async (email) => {
+    // First check if user is a super admin
+    if (adminEmails.includes(email.toLowerCase())) {
+      return true;
+    }
+
+    // Then check Firestore admin list
+    try {
+      const adminDoc = await getDoc(doc(db, 'settings', 'admins'));
+      if (adminDoc.exists()) {
+        const adminData = adminDoc.data();
+        const adminList = adminData.admins || [];
+        return adminList.some(admin => admin.email.toLowerCase() === email.toLowerCase());
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+    }
+
+    return false;
+  };
 
   // Daily Bible verses
   const dailyVerses = [
@@ -613,6 +636,14 @@ function App() {
 
   const [userDatabase, setUserDatabase] = useState(initializeUserDatabase);
 
+  // Function to update current user's admin status in real-time
+  const updateCurrentUserAdmin = (isAdmin) => {
+    setCurrentUser(prevUser => ({
+      ...prevUser,
+      isAdmin: isAdmin
+    }));
+  };
+
   // Save userDatabase to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('userDatabase', JSON.stringify(userDatabase));
@@ -640,13 +671,16 @@ function App() {
         return;
       }
       
+      // Check if new user should be admin
+      const isNewUserAdmin = await checkIsAdmin(email);
+      
       // Add new user to database (in production, hash the password)
       const newUserDatabase = {
         ...userDatabase,
         [email]: {
           password: password,
           name: name,
-          isAdmin: adminEmails.includes(email)
+          isAdmin: isNewUserAdmin
         }
       };
       
@@ -694,16 +728,19 @@ function App() {
     const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
     const savedProfilePicture = userProfiles[email];
     
+    // Check current admin status (from both static and Firestore)
+    const isCurrentlyAdmin = await checkIsAdmin(email);
+    
     // Successful login
     setCurrentUser({
       name: user.name,
       email: email,
-      isAdmin: user.isAdmin,
+      isAdmin: isCurrentlyAdmin,
       profilePicture: savedProfilePicture || null,
       bio: ""
     });
     
-    if (user.isAdmin) {
+    if (isCurrentlyAdmin) {
       alert(`Welcome back, ${user.name}! You have full admin access to San Diego Rescue Mission Community.`);
     } else {
       alert(`Welcome to San Diego Rescue Mission Community, ${user.name}! Enjoy connecting with your support community.`);
@@ -988,6 +1025,7 @@ function App() {
       <AdminDashboard 
         currentUser={currentUser}
         onClose={() => setShowAdminDashboard(false)}
+        updateCurrentUserAdmin={updateCurrentUserAdmin}
       />
     );
   }
