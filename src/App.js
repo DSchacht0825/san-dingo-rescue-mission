@@ -15,6 +15,7 @@ import React, { useState, useEffect } from "react";
 import { Eye, EyeOff, Bell, BellOff, Shield, Megaphone, User, Heart, MessageCircle, Reply, Star, Users, BookOpen, HelpCircle } from "lucide-react";
 import { db } from "./firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, startAfter, getDoc, doc } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import AdminDashboard from "./AdminDashboard";
 import { PureUpload } from "./PureUpload";
 import Header from "./components/Header";
@@ -599,50 +600,11 @@ function App() {
   const [messageType, setMessageType] = useState("post");
   const [adminMessage, setAdminMessage] = useState("");
 
-  // Initialize user database from localStorage or use defaults
-  const initializeUserDatabase = () => {
-    const saved = localStorage.getItem('userDatabase');
-    if (saved) {
-      const db = JSON.parse(saved);
-      console.log('Loaded user database from localStorage:', Object.keys(db));
-      return db;
-    }
-    
-    // Default accounts
-    const defaultDB = {
-      "schacht.dan@gmail.com": { 
-        password: "admin123", 
-        name: "Daniel Schacht",
-        isAdmin: true 
-      },
-      "daniel@sdrescuemission.org": { 
-        password: "mission2025", 
-        name: "Daniel - SDRM",
-        isAdmin: true 
-      },
-      "test@example.com": { 
-        password: "test123", 
-        name: "Test User",
-        isAdmin: false 
-      },
-      "headshotwaco@gmail.com": { 
-        password: "headshot123", 
-        name: "Community Member",
-        isAdmin: false 
-      },
-      "info@serenitycollective.org": { 
-        password: "temp123", 
-        name: "Serenity Collective Admin",
-        isAdmin: true 
-      }
-    };
-    
-    // Save defaults to localStorage
-    localStorage.setItem('userDatabase', JSON.stringify(defaultDB));
-    return defaultDB;
-  };
-
-  const [userDatabase, setUserDatabase] = useState(initializeUserDatabase);
+  // Firebase functions
+  const functions = getFunctions();
+  const loginUser = httpsCallable(functions, 'loginUser');
+  const createUser = httpsCallable(functions, 'createUser');
+  const initializeUsers = httpsCallable(functions, 'initializeUsers');
 
   // Function to update current user's admin status in real-time
   const updateCurrentUserAdmin = (isAdmin) => {
@@ -770,13 +732,59 @@ function App() {
       return;
     }
     
+    try {
+      console.log('Attempting Firestore login for:', email);
+      
+      // Try Firestore login first
+      const result = await loginUser({
+        email: email,
+        password: password
+      });
+      
+      if (result.data.success) {
+        const userData = result.data.user;
+        console.log('Firestore login successful:', userData);
+        
+        // Load user-specific profile picture
+        const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
+        const savedProfilePicture = userProfiles[email];
+        
+        // Successful login
+        setCurrentUser({
+          name: userData.name,
+          email: userData.email,
+          isAdmin: userData.isAdmin,
+          profilePicture: savedProfilePicture || null,
+          bio: ""
+        });
+        
+        if (userData.isAdmin) {
+          alert(`Welcome back, ${userData.name}! You have full admin access to San Diego Rescue Mission Community.`);
+        } else {
+          alert(`Welcome to San Diego Rescue Mission Community, ${userData.name}! Enjoy connecting with your support community.`);
+        }
+        
+        // Load user's journal entries after login
+        setTimeout(() => {
+          loadJournalEntries();
+        }, 1000);
+        
+        setCurrentView("chat");
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Firestore login failed:', error);
+      console.log('Falling back to localStorage login...');
+    }
+    
+    // Fallback to localStorage system
     const user = userDatabase[email];
-    console.log('Login attempt for:', email);
-    console.log('User found in database:', user ? 'YES' : 'NO');
-    console.log('Available users in database:', Object.keys(userDatabase));
+    console.log('localStorage login attempt for:', email);
+    console.log('User found in localStorage:', user ? 'YES' : 'NO');
     
     if (!user || user.password !== password) {
-      console.log('Login failed for:', email, 'User exists:', !!user, 'Password match:', user ? user.password === password : false);
+      console.log('Login failed - user not found or password mismatch');
       alert("Invalid email or password. Please try again.");
       return;
     }

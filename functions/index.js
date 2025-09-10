@@ -506,6 +506,126 @@ exports.removeAdmin = onCall(async (request) => {
   }
 });
 
+// Create user account function
+exports.createUser = onCall(async (request) => {
+  const { email, password, name, isAdmin = false } = request.data;
+  
+  try {
+    logger.info(`Creating user account for: ${email}`);
+
+    // Create user document in Firestore
+    await db.collection('users').doc(email).set({
+      email: email,
+      password: password, // In production, this should be hashed
+      name: name,
+      isAdmin: isAdmin,
+      createdAt: new Date(),
+      isActive: true
+    });
+
+    logger.info(`User created successfully: ${email}`);
+    return { success: true, email: email };
+
+  } catch (error) {
+    logger.error('Error creating user:', error);
+    throw new HttpsError('internal', `Failed to create user: ${error.message}`);
+  }
+});
+
+// Login function
+exports.loginUser = onCall(async (request) => {
+  const { email, password } = request.data;
+  
+  try {
+    logger.info(`Login attempt for: ${email}`);
+
+    // Get user from Firestore
+    const userDoc = await db.collection('users').doc(email).get();
+    
+    if (!userDoc.exists) {
+      logger.info(`User not found: ${email}`);
+      throw new HttpsError('not-found', 'Invalid email or password');
+    }
+
+    const userData = userDoc.data();
+    
+    if (!userData.isActive) {
+      throw new HttpsError('permission-denied', 'Account is deactivated');
+    }
+
+    if (userData.password !== password) {
+      logger.info(`Invalid password for: ${email}`);
+      throw new HttpsError('unauthenticated', 'Invalid email or password');
+    }
+
+    // Check if user is admin (both static and Firestore)
+    const userIsAdmin = await isAdmin(email);
+
+    logger.info(`Login successful for: ${email}, Admin: ${userIsAdmin}`);
+    return { 
+      success: true, 
+      user: {
+        email: userData.email,
+        name: userData.name,
+        isAdmin: userIsAdmin
+      }
+    };
+
+  } catch (error) {
+    logger.error('Error during login:', error);
+    throw error; // Re-throw HttpsErrors as-is
+  }
+});
+
+// Initialize default users function
+exports.initializeUsers = onCall(async (request) => {
+  const { adminEmail } = request.data;
+  
+  if (!adminEmail || !(await isAdmin(adminEmail))) {
+    throw new HttpsError('permission-denied', 'Admin access required');
+  }
+
+  try {
+    logger.info('Initializing default users');
+
+    const defaultUsers = [
+      {
+        email: "schacht.dan@gmail.com",
+        password: "admin123",
+        name: "Daniel Schacht",
+        isAdmin: true
+      },
+      {
+        email: "daniel@sdrescuemission.org",
+        password: "mission2025",
+        name: "Daniel - SDRM",
+        isAdmin: true
+      },
+      {
+        email: "info@serenitycollective.org",
+        password: "temp123",
+        name: "Serenity Collective Admin",
+        isAdmin: true
+      }
+    ];
+
+    for (const user of defaultUsers) {
+      await db.collection('users').doc(user.email).set({
+        ...user,
+        createdAt: new Date(),
+        isActive: true
+      });
+    }
+
+    logger.info('Default users initialized successfully');
+    return { success: true, usersCreated: defaultUsers.length };
+
+  } catch (error) {
+    logger.error('Error initializing users:', error);
+    throw new HttpsError('internal', `Failed to initialize users: ${error.message}`);
+  }
+});
+
 // Scheduled function to generate daily statistics (optional)
 exports.generateDailyStats = onSchedule('0 6 * * *', async (event) => {
   logger.info('Running daily statistics generation');
