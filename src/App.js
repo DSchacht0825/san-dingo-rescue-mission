@@ -615,37 +615,16 @@ function App() {
   };
 
   // Function to update user database with new admin status
-  const updateUserDatabase = (email, updates) => {
-    setUserDatabase(prevDB => {
-      const newDB = { ...prevDB };
-      if (newDB[email]) {
-        newDB[email] = { ...newDB[email], ...updates };
-        console.log('Updated existing user:', email, 'New status:', newDB[email]);
-      } else {
-        // Create user entry if it doesn't exist
-        newDB[email] = {
-          password: 'temp123', // Temporary password - user should reset
-          name: 'New Admin',
-          isAdmin: updates.isAdmin || false,
-          ...updates
-        };
-        console.log('Created new admin user:', email, 'Account details:', newDB[email]);
-      }
-      
-      // Immediately save to localStorage
-      localStorage.setItem('userDatabase', JSON.stringify(newDB));
-      console.log('Updated userDatabase saved to localStorage. Total users:', Object.keys(newDB).length);
-      
-      return newDB;
-    });
+  const updateUserDatabase = async (email, updates) => {
+    console.log('Admin status updated for:', email, 'Updates:', updates);
+    // This is now handled by Firestore in the backend
+    // No need to update localStorage
   };
 
   // Debug function to reset user database (temporary for testing)
   const resetUserDatabase = () => {
-    console.log('Resetting user database...');
-    localStorage.removeItem('userDatabase');
-    setUserDatabase(initializeUserDatabase());
-    console.log('Database reset complete. Please refresh the page.');
+    console.log('Database reset not needed - using Firestore');
+    console.log('All user data is stored in Firestore database.');
   };
 
   // Expose updateUserDatabase and reset function to window for AdminDashboard access
@@ -658,10 +637,10 @@ function App() {
     };
   }, [updateUserDatabase]);
 
-  // Save userDatabase to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('userDatabase', JSON.stringify(userDatabase));
-  }, [userDatabase]);
+  // No longer needed - using Firestore instead of localStorage
+  // useEffect(() => {
+  //   localStorage.setItem('userDatabase', JSON.stringify(userDatabase));
+  // }, [userDatabase]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -679,28 +658,31 @@ function App() {
         return;
       }
       
-      if (userDatabase[email]) {
-        console.log('User already exists:', email);
-        alert("User already exists. Please use a different email or sign in instead.");
+      // Try to create user via Firestore
+      try {
+        const result = await createUser({
+          email: email,
+          password: password,
+          name: name
+        });
+        
+        if (result.data.success) {
+          alert("Account created successfully! You can now sign in.");
+          setAuthMode("login");
+          setFormData({ name: "", email: "", password: "", confirmPassword: "", subscribeNewsletter: true });
+          return;
+        } else {
+          alert(result.data.message || "Error creating account. Please try again.");
+          return;
+        }
+      } catch (error) {
+        console.error('Firestore account creation failed:', error);
+        alert("Error creating account. Please try again.");
         return;
       }
       
-      // Check if new user should be admin
-      const isNewUserAdmin = await checkIsAdmin(email);
-      
-      // Add new user to database (in production, hash the password)
-      const newUserDatabase = {
-        ...userDatabase,
-        [email]: {
-          password: password,
-          name: name,
-          isAdmin: isNewUserAdmin
-        }
-      };
-      
-      console.log('Creating new user:', email, 'Database size before:', Object.keys(userDatabase).length);
-      setUserDatabase(newUserDatabase);
-      console.log('Database size after:', Object.keys(newUserDatabase).length);
+      // Account creation is now handled above with Firestore
+      // This code block is no longer needed
       
       // Save to newsletter list if subscribed
       if (formData.subscribeNewsletter) {
@@ -720,9 +702,7 @@ function App() {
         }
       }
       
-      alert("Account created successfully! You can now sign in.");
-      setAuthMode("login");
-      setFormData({ name: "", email: "", password: "", confirmPassword: "", subscribeNewsletter: true });
+      // Account creation completion is handled above
       return;
     }
     
@@ -778,45 +758,10 @@ function App() {
       console.log('Falling back to localStorage login...');
     }
     
-    // Fallback to localStorage system
-    const user = userDatabase[email];
-    console.log('localStorage login attempt for:', email);
-    console.log('User found in localStorage:', user ? 'YES' : 'NO');
-    
-    if (!user || user.password !== password) {
-      console.log('Login failed - user not found or password mismatch');
-      alert("Invalid email or password. Please try again.");
-      return;
-    }
-    
-    // Load user-specific profile picture
-    const userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '{}');
-    const savedProfilePicture = userProfiles[email];
-    
-    // Check current admin status (from both static and Firestore)
-    const isCurrentlyAdmin = await checkIsAdmin(email);
-    
-    // Successful login
-    setCurrentUser({
-      name: user.name,
-      email: email,
-      isAdmin: isCurrentlyAdmin,
-      profilePicture: savedProfilePicture || null,
-      bio: ""
-    });
-    
-    if (isCurrentlyAdmin) {
-      alert(`Welcome back, ${user.name}! You have full admin access to San Diego Rescue Mission Community.`);
-    } else {
-      alert(`Welcome to San Diego Rescue Mission Community, ${user.name}! Enjoy connecting with your support community.`);
-    }
-    
-    // Load user's journal entries after login
-    setTimeout(() => {
-      loadJournalEntries();
-    }, 1000);
-    
-    setCurrentView("chat");
+    // No Firestore or localStorage login worked
+    console.log('All login methods failed');
+    alert("Invalid email or password. Please try again.");
+    return;
   };
 
   const handleInputChange = (e) => {
@@ -835,19 +780,14 @@ function App() {
     try {
       const email = resetEmail.toLowerCase();
       console.log('Looking for email:', email);
-      console.log('Available emails:', Object.keys(userDatabase));
+      console.log('Using Firestore - no localStorage database available');
       
-      const user = userDatabase[email];
+      // No user found in localStorage fallback since we removed userDatabase
+      console.log('No localStorage fallback available - using Firestore only');
       
-      if (!user) {
-        console.log('User not found for email:', email);
-        alert("Email not found. Please check your email address or create an account.");
-        return;
-      }
-
-      console.log('User found:', user);
-      // In a real app, you'd send an email. For now, we'll show the password
-      alert(`Password reset for ${email}\n\nYour password is: ${user.password}\n\n(In production, this would be sent via email)`);
+      // Password reset is not available without localStorage database
+      console.log('Password reset not available - using Firestore system');
+      alert("Password reset is not available with this system. Please contact an administrator for assistance.");
       
       setResetEmail("");
       setShowResetModal(false);
